@@ -133,14 +133,14 @@ private fun MenuMain(vm: GameViewModel) {
     SheetLabel("Help")
     Tile("Hint") { vm.showHintPage() }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(Modifier.weight(1f)) { Tile("Check cell") { vm.checkCell() } }
+        Box(Modifier.weight(1f)) { Tile("Check square") { vm.checkCell() } }
         Box(Modifier.weight(1f)) { Tile("Check puzzle") { vm.checkPuzzle() } }
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(pal.btnLine))
     Spacer(Modifier.height(12.dp))
     SheetLabel("Reveal & reset")
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(Modifier.weight(1f)) { Tile("Reveal cell") { vm.revealCell() } }
+        Box(Modifier.weight(1f)) { Tile("Reveal square") { vm.revealCell() } }
         Box(Modifier.weight(1f)) { Tile("Reveal puzzle") { vm.requestRevealPuzzle() } }
     }
     Tile("Reset puzzle") { vm.requestReset() }
@@ -200,7 +200,7 @@ private fun SettingsSheet(vm: GameViewModel, st: Settings) {
     ToggleRow("Conflicts", on = st.conflicts) { vm.toggleSetting("conflicts") }
     SheetLabel("Assistance")
     ToggleRow("Check guesses when entered", on = st.checkOnEntry) { vm.toggleSetting("checkOnEntry") }
-    ToggleRow("Start in auto candidate mode", on = st.autoStart) { vm.toggleSetting("autoStart") }
+    ToggleRow("Start in auto notes mode", on = st.autoStart) { vm.toggleSetting("autoStart") }
     SheetLabel("Game")
     ToggleRow("Show timer", on = st.timer) { vm.toggleSetting("timer") }
     ToggleRow("Play sound on solve", on = st.sound) { vm.toggleSetting("sound") }
@@ -219,9 +219,9 @@ private fun HelpSheet(vm: GameViewModel) {
         modifier = Modifier.padding(bottom = 12.dp))
     Text(
         "Fill the grid so every row, column, and 3×3 box contains 1 through 9, with no repeats.\n\n" +
-            "Tap a cell, then a number. Normal places a number; Candidate jots small pencil marks. " +
+            "Tap a square, then a number. Normal places the number; Notes jots small pencil marks. " +
             "Undo steps back. Repeated numbers are ringed so you can spot clashes.\n\n" +
-            "The ⋯ menu can check or reveal a cell, or reset the puzzle. A new set of puzzles arrives each day.",
+            "The ⋯ menu can check or reveal a square, or reset the puzzle. A new set of puzzles arrives each day.",
         color = pal.txtDim, fontSize = 15.sp, lineHeight = 22.sp,
     )
     Spacer(Modifier.height(16.dp))

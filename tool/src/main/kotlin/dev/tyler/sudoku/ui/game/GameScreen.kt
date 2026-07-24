@@ -207,21 +207,16 @@ class GameScreen(
                         SegButton("Normal", ui.mode == InputMode.NORMAL, Modifier.weight(1f).fillMaxHeight()) {
                             viewModel.setMode(InputMode.NORMAL)
                         }
-                        SegButton("Candidate", ui.mode == InputMode.CANDIDATE, Modifier.weight(1f).fillMaxHeight()) {
+                        SegButton("Notes", ui.mode == InputMode.CANDIDATE, Modifier.weight(1f).fillMaxHeight()) {
                             viewModel.setMode(InputMode.CANDIDATE)
                         }
                     }
                     Spacer(Modifier.width(6.dp))
                     AutoToggle(ui.autoCandidate) { viewModel.toggleAutoCandidate() }
-                    Text(
-                        "Undo",
-                        color = if (undoEnabled) pal.txt else pal.txtFaint,
-                        fontSize = 14.sp,
-                        modifier = Modifier.clip(RoundedCornerShape(9.dp))
-                            .clickable(enabled = undoEnabled) { viewModel.undo() }
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                    )
-                    IconGlyph("▾", "Hide keypad") { viewModel.deselect() }
+                    // Row-height glyph buttons (not IconGlyph's fixed 44dp box): the control row is
+                    // ~27dp tall on the LP3's 360dp-wide panel, so fixed-size/padded controls clip.
+                    HeaderGlyph("↺", "Undo", enabled = undoEnabled) { viewModel.undo() }
+                    HeaderGlyph("▾", "Hide keypad", enabled = true) { viewModel.deselect() }
                 }
                 Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     for (d in 1..5) NumKey(d, counts[d] >= 9, Modifier.weight(1f).fillMaxHeight())
@@ -244,10 +239,10 @@ class GameScreen(
                     }
                 }
                 Row(Modifier.fillMaxWidth().height(keyH), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    IconKey("✎", "Candidate mode", on = ui.mode == InputMode.CANDIDATE, enabled = true, Modifier.weight(1f).fillMaxHeight()) {
+                    IconKey("✎", "Notes", on = ui.mode == InputMode.CANDIDATE, enabled = true, Modifier.weight(1f).fillMaxHeight()) {
                         viewModel.setMode(if (ui.mode == InputMode.NORMAL) InputMode.CANDIDATE else InputMode.NORMAL)
                     }
-                    IconKey("A", "Auto candidates", on = ui.autoCandidate, enabled = true, Modifier.weight(1f).fillMaxHeight()) {
+                    IconKey("A", "Auto notes", on = ui.autoCandidate, enabled = true, Modifier.weight(1f).fillMaxHeight()) {
                         viewModel.toggleAutoCandidate()
                     }
                     IconKey("✕", "Erase", on = false, enabled = true, Modifier.weight(1f).fillMaxHeight()) { viewModel.erase() }
@@ -281,13 +276,32 @@ class GameScreen(
             )
         }
 
-    // Compact labeled checkbox for auto candidate mode; used in the horizontal control row.
+    // Control-row glyph button sized by the row (fillMaxHeight), sharing the side dock's glyph
+    // vocabulary (↺ undo, ▾ hide) so both keypad layouts read the same.
+    @Composable
+    private fun HeaderGlyph(glyph: String, label: String, enabled: Boolean, onClick: () -> Unit) {
+        val pal = LocalSudokuPalette.current
+        Box(
+            Modifier.fillMaxHeight().clip(RoundedCornerShape(9.dp))
+                .clickable(enabled = enabled, onClickLabel = label, onClick = onClick)
+                .padding(horizontal = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                glyph,
+                color = if (enabled) pal.txt else pal.txtFaint,
+                fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+
+    // Compact labeled checkbox for auto notes mode; used in the horizontal control row.
     @Composable
     private fun AutoToggle(on: Boolean, onClick: () -> Unit) {
         val pal = LocalSudokuPalette.current
         Row(
             Modifier.clip(RoundedCornerShape(9.dp)).clickable(onClick = onClick)
-                .padding(horizontal = 6.dp, vertical = 6.dp),
+                .padding(horizontal = 6.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -315,7 +329,7 @@ class GameScreen(
                 label,
                 color = if (on) pal.bg else pal.txtDim,
                 fontSize = 14.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
-                // Pin to one line so a narrow slot ellipsizes instead of wrapping "Candidate" vertically.
+                // Pin to one line so a narrow slot ellipsizes instead of wrapping the label vertically.
                 maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 4.dp),
             )
