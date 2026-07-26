@@ -110,6 +110,19 @@ class GameViewModelTest {
         assertTrue(Codecs.decodeSettings(store.map[StoreKeys.SETTINGS]).checkOnEntry, "persisted")
     }
 
+    @Test fun disablingCheckOnEntryClearsMarks() = runTest {
+        val vm = vm(); advanceUntilIdle()
+        val i = (0 until 81).first { !vm.ui.value.givenMask[it] }
+        val wrong = if (vm.ui.value.solution[i] == 1) 2 else 1
+        vm.toggleSetting("checkOnEntry"); advanceUntilIdle()
+        vm.select(i); vm.input(wrong); advanceUntilIdle()
+        assertTrue(vm.ui.value.checkErr[i], "wrong entry flagged while check-on-entry is on")
+
+        vm.toggleSetting("checkOnEntry"); advanceUntilIdle()
+        assertFalse(vm.ui.value.settings.checkOnEntry)
+        assertTrue(vm.ui.value.checkErr.none { it }, "marks cleared when the setting is turned off")
+    }
+
     @Test fun backPressWithoutOverlayPopsAfterPersist() = runTest {
         val vm = vm(); advanceUntilIdle()
         assertFalse(vm.onBackPressed()); advanceUntilIdle()

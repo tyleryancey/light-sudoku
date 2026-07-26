@@ -223,8 +223,15 @@ class GameViewModel(
             else -> st
         }
         _ui.value = s.copy(settings = next)
-        // retroactively flag existing entries when enabling check-on-entry (matches prototype)
-        if (name == "checkOnEntry" && next.checkOnEntry) checkPuzzleSilent()
+        // Check-on-entry is symmetric: enabling retroactively flags existing entries (matches the
+        // prototype), disabling clears every mark. Without the clear, a dot raised while the setting
+        // was on stayed on the board with nothing left to explain it. Marks from the ⋯ menu's Check
+        // puzzle are cleared too — checkErr is deliberately absent from ProgressDto and reset in
+        // open(), so it is already session-scoped and not worth tracking provenance for.
+        if (name == "checkOnEntry") {
+            if (next.checkOnEntry) checkPuzzleSilent()
+            else _ui.value = s.copy(checkErr = BooleanArray(81))
+        }
         viewModelScope.launch { store.set(StoreKeys.SETTINGS, Codecs.encodeSettings(next)) }
     }
 
