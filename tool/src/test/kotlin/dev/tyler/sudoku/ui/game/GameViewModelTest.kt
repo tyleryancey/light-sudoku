@@ -3,6 +3,7 @@ package dev.tyler.sudoku.ui.game
 import dev.tyler.sudoku.data.Codecs
 import dev.tyler.sudoku.data.InMemoryKeyValueStore
 import dev.tyler.sudoku.data.ProgressDto
+import dev.tyler.sudoku.data.Settings
 import dev.tyler.sudoku.data.StoreKeys
 import dev.tyler.sudoku.engine.SudokuEngine
 import kotlinx.coroutines.Dispatchers
@@ -121,6 +122,33 @@ class GameViewModelTest {
         vm.toggleSetting("checkOnEntry"); advanceUntilIdle()
         assertFalse(vm.ui.value.settings.checkOnEntry)
         assertTrue(vm.ui.value.checkErr.none { it }, "marks cleared when the setting is turned off")
+    }
+
+    @Test fun openPurgesRetiredSettingsKeysFromStorage() = runTest {
+        // A v1.3 blob carrying all four retired keys, with plain mode on.
+        store.map[StoreKeys.SETTINGS] = """{"__v":2,"rowcol":true,"box":true,"same":true,""" +
+            """"conflicts":true,"checkOnEntry":true,"autoStart":true,"timer":true,""" +
+            """"sound":true,"plain":true,"keypadMargin":"RIGHT"}"""
+        val vm = vm(); advanceUntilIdle()
+
+        val stored = store.map[StoreKeys.SETTINGS]!!
+        for (retired in listOf("box", "conflicts", "autoStart", "plain")) {
+            assertFalse(stored.contains("\"$retired\""), "$retired purged from storage on first load")
+        }
+        // Survivors kept; the flags plain used to mask cleared; no second load needed.
+        val settings = vm.ui.value.settings
+        assertTrue(settings.timer && settings.sound)
+        assertEquals("RIGHT", settings.keypadMargin)
+        assertFalse(settings.rowcol || settings.same || settings.checkOnEntry, "bare grid preserved")
+        assertEquals(stored, Codecs.encodeSettings(settings), "storage matches the live settings")
+    }
+
+    @Test fun openLeavesAnAlreadyCanonicalSettingsBlobAlone() = runTest {
+        val canonical = Codecs.encodeSettings(Settings(timer = true, keypadMargin = "LEFT"))
+        store.map[StoreKeys.SETTINGS] = canonical
+        val vm = vm(); advanceUntilIdle()
+        assertEquals(canonical, store.map[StoreKeys.SETTINGS], "no rewrite when nothing needs purging")
+        assertTrue(vm.ui.value.settings.timer)
     }
 
     @Test fun disablingCheckOnEntryAlsoClearsMarksHeldInUndoHistory() = runTest {

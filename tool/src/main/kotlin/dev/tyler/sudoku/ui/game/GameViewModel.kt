@@ -100,7 +100,20 @@ class GameViewModel(
 
     // ---------- open / generate ----------
     private suspend fun open() {
-        val settings = Codecs.decodeSettings(store.get(StoreKeys.SETTINGS))
+        val rawSettings = store.get(StoreKeys.SETTINGS)
+        val settings = Codecs.decodeSettings(rawSettings)
+        // Retire the dropped keys from storage on first load, so an upgraded install ends up in the
+        // state it would have been in had box/conflicts/autoStart/plain never existed — no lingering
+        // values, and the plain-mode migration in decodeSettings applies exactly once instead of on
+        // every decode until some unrelated settings write happens to purge it.
+        //
+        // Comparing against the re-encoded form rather than scanning for known key names keeps this
+        // correct for any future shrink, and also normalizes stale-__v and corrupt blobs, both of
+        // which decodeSettings already resolves to defaults.
+        val canonical = Codecs.encodeSettings(settings)
+        if (rawSettings != null && rawSettings != canonical) {
+            withContext(NonCancellable) { store.set(StoreKeys.SETTINGS, canonical) }
+        }
         val cacheKey = StoreKeys.puzzle(dateKey, difficulty)
         val p = Codecs.decodePuzzle(store.get(cacheKey)) ?: withContext(generationDispatcher) {
             SudokuEngine.generatePuzzle(dateKey, difficulty)
