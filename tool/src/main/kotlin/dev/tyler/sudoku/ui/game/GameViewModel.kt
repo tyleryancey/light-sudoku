@@ -372,12 +372,25 @@ class GameViewModel(
     private fun marginPref(settings: Settings = s.settings): KeypadDock =
         runCatching { KeypadDock.valueOf(settings.keypadMargin) }.getOrDefault(KeypadDock.BOTTOM)
 
-    /** True if a keypad docked at [m] would cover [i]'s 3-cell band (rows for TOP/BOTTOM, cols for LEFT/RIGHT). */
-    private fun hides(m: KeypadDock, i: Int): Boolean = when (m) {
-        KeypadDock.TOP -> i / 9 in 0..2
-        KeypadDock.BOTTOM -> i / 9 in 6..8
-        KeypadDock.LEFT -> i % 9 in 0..2
-        KeypadDock.RIGHT -> i % 9 in 6..8
+    /**
+     * True if a keypad docked at [m] would actually cover cell [i].
+     *
+     * Both orientations occupy the same 3×5 cell footprint, centred on their margin (see
+     * FloatingKeypad): TOP/BOTTOM span rows 0..2 / 6..8 across the middle five COLUMNS, and
+     * LEFT/RIGHT span columns 0..2 / 6..8 across the middle five ROWS. Testing only the band axis
+     * would over-report — a BOTTOM-docked keypad never reaches column 0, so treating a row-8 corner
+     * cell as hidden would hop the keypad for no reason and make it jump between TOP and BOTTOM as
+     * the selection moves along the bottom row.
+     */
+    private fun hides(m: KeypadDock, i: Int): Boolean {
+        val row = i / 9
+        val col = i % 9
+        return when (m) {
+            KeypadDock.TOP -> row in 0..2 && col in 2..6
+            KeypadDock.BOTTOM -> row in 6..8 && col in 2..6
+            KeypadDock.LEFT -> col in 0..2 && row in 2..6
+            KeypadDock.RIGHT -> col in 6..8 && row in 2..6
+        }
     }
 
     private fun opposite(m: KeypadDock): KeypadDock = when (m) {
@@ -389,8 +402,9 @@ class GameViewModel(
 
     /**
      * Auto-avoid placement: dock at the [preferred] margin unless it would hide the selected cell, in
-     * which case use the OPPOSITE margin. A cell in one margin's 3-cell band can't be in its opposite's
-     * band, so the opposite always un-hides it. Pure — this is the SELECTION-time transition; an
+     * which case use the OPPOSITE margin. A cell inside one margin's band can't also be inside its
+     * opposite's band (the two bands are disjoint on that axis), so the opposite always un-hides it —
+     * this still holds with [hides] checking both axes. Pure — this is the SELECTION-time transition; an
      * explicit flick sets [GameUiState.keypadDockNow] directly (see [setKeypadMargin]) and thus wins
      * over this. [selected] == -1 -> preferred unchanged (keypad hidden anyway).
      */

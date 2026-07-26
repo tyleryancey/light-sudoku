@@ -569,12 +569,18 @@ class GameViewModelTest {
 
     // ---------- flickable keypad: preferred margin + auto-avoid across all 4 margins ----------
 
-    // A margin's 3-cell band (mirrors the production logic; used only by the invariant test below).
-    private fun hidesCell(m: KeypadDock, i: Int) = when (m) {
-        KeypadDock.TOP -> i / 9 in 0..2
-        KeypadDock.BOTTOM -> i / 9 in 6..8
-        KeypadDock.LEFT -> i % 9 in 0..2
-        KeypadDock.RIGHT -> i % 9 in 6..8
+    // The keypad's real 3×5 cell footprint, centred on its margin (mirrors the production logic;
+    // used only by the invariant test below). Both axes matter: a BOTTOM dock spans rows 6..8 but
+    // only the middle five columns, so the bottom corners stay clear.
+    private fun hidesCell(m: KeypadDock, i: Int): Boolean {
+        val row = i / 9
+        val col = i % 9
+        return when (m) {
+            KeypadDock.TOP -> row in 0..2 && col in 2..6
+            KeypadDock.BOTTOM -> row in 6..8 && col in 2..6
+            KeypadDock.LEFT -> col in 0..2 && row in 2..6
+            KeypadDock.RIGHT -> col in 6..8 && row in 2..6
+        }
     }
 
     @Test fun keypadDockUsesPreferredWhenItDoesNotHideCell() = runTest {
@@ -585,10 +591,23 @@ class GameViewModelTest {
 
     @Test fun keypadDockHopsToOppositeWhenPreferredHides() = runTest {
         val vm = vm(); advanceUntilIdle()
-        assertEquals(KeypadDock.TOP, vm.keypadDock(63, KeypadDock.BOTTOM), "row-7 cell under BOTTOM -> TOP")
-        assertEquals(KeypadDock.BOTTOM, vm.keypadDock(9, KeypadDock.TOP), "row-1 cell under TOP -> BOTTOM")
-        assertEquals(KeypadDock.RIGHT, vm.keypadDock(1, KeypadDock.LEFT), "col-1 cell under LEFT -> RIGHT")
-        assertEquals(KeypadDock.LEFT, vm.keypadDock(7, KeypadDock.RIGHT), "col-7 cell under RIGHT -> LEFT")
+        // Each cell is inside the dock's real footprint — in the band AND in the middle five
+        // cells of the cross axis, since the keypad is only 5 cells across.
+        assertEquals(KeypadDock.TOP, vm.keypadDock(67, KeypadDock.BOTTOM), "row-7 col-4 under BOTTOM -> TOP")
+        assertEquals(KeypadDock.BOTTOM, vm.keypadDock(13, KeypadDock.TOP), "row-1 col-4 under TOP -> BOTTOM")
+        assertEquals(KeypadDock.RIGHT, vm.keypadDock(37, KeypadDock.LEFT), "row-4 col-1 under LEFT -> RIGHT")
+        assertEquals(KeypadDock.LEFT, vm.keypadDock(43, KeypadDock.RIGHT), "row-4 col-7 under RIGHT -> LEFT")
+    }
+
+    @Test fun keypadDockKeepsPreferredForCellsBesideTheDock() = runTest {
+        val vm = vm(); advanceUntilIdle()
+        // The dock is only 5 cells across, so the four board corners are never covered by any
+        // margin. Hopping for them would make the keypad jump as the selection slides along an edge.
+        assertEquals(KeypadDock.BOTTOM, vm.keypadDock(72, KeypadDock.BOTTOM), "row-8 col-0 is beside a BOTTOM dock")
+        assertEquals(KeypadDock.BOTTOM, vm.keypadDock(80, KeypadDock.BOTTOM), "row-8 col-8 is beside a BOTTOM dock")
+        assertEquals(KeypadDock.TOP, vm.keypadDock(0, KeypadDock.TOP), "row-0 col-0 is beside a TOP dock")
+        assertEquals(KeypadDock.LEFT, vm.keypadDock(0, KeypadDock.LEFT), "row-0 col-0 is beside a LEFT dock")
+        assertEquals(KeypadDock.RIGHT, vm.keypadDock(8, KeypadDock.RIGHT), "row-0 col-8 is beside a RIGHT dock")
     }
 
     @Test fun keypadDockNoSelectionReturnsPreferred() = runTest {
@@ -606,10 +625,10 @@ class GameViewModelTest {
 
     @Test fun setKeypadMarginWinsOverAutoAvoidAndPersistsPreference() = runTest {
         val vm = vm(); advanceUntilIdle()
-        // cell 1 = row 0, col 1 (LEFT band). Default preferred is BOTTOM, which does NOT hide it.
-        vm.select(1)
-        assertEquals(KeypadDock.BOTTOM, vm.ui.value.keypadDockNow, "pre-flick: BOTTOM doesn't hide a row-0 cell")
-        // Flick LEFT — LEFT *would* hide col-1, but an explicit flick wins: it lands LEFT anyway.
+        // cell 37 = row 4, col 1 — inside LEFT's footprint. Default preferred is BOTTOM, which does NOT hide it.
+        vm.select(37)
+        assertEquals(KeypadDock.BOTTOM, vm.ui.value.keypadDockNow, "pre-flick: BOTTOM doesn't hide a row-4 cell")
+        // Flick LEFT — LEFT *would* hide row-4/col-1, but an explicit flick wins: it lands LEFT anyway.
         vm.setKeypadMargin(KeypadDock.LEFT)
         assertEquals(KeypadDock.LEFT, vm.ui.value.keypadDockNow, "flick wins: lands where flicked even over the cell")
         assertEquals("LEFT", vm.ui.value.settings.keypadMargin, "flick updates the persisted preference (stored as String)")
@@ -617,9 +636,9 @@ class GameViewModelTest {
 
     @Test fun selectRecomputesRenderedMarginViaAutoAvoid() = runTest {
         val vm = vm(); advanceUntilIdle()
-        // preferred defaults BOTTOM: a bottom-band cell hops the rendered margin to TOP...
-        vm.select(63)
-        assertEquals(KeypadDock.TOP, vm.ui.value.keypadDockNow, "row-7 selection hops rendered to TOP")
+        // preferred defaults BOTTOM: a cell under the bottom dock hops the rendered margin to TOP...
+        vm.select(67)
+        assertEquals(KeypadDock.TOP, vm.ui.value.keypadDockNow, "row-7 col-4 selection hops rendered to TOP")
         // ...and a cell BOTTOM doesn't cover returns rendered to the preferred BOTTOM.
         vm.select(9)
         assertEquals(KeypadDock.BOTTOM, vm.ui.value.keypadDockNow, "row-1 selection returns rendered to preferred BOTTOM")
@@ -628,7 +647,7 @@ class GameViewModelTest {
     @Test fun renderedMarginReturnsToPreferredAfterAutoHop() = runTest {
         val vm = vm(); advanceUntilIdle()
         vm.setKeypadMargin(KeypadDock.LEFT)              // prefer LEFT
-        vm.select(1)                                     // col-1 under LEFT -> hop RIGHT
+        vm.select(37)                                    // row-4 col-1 under LEFT -> hop RIGHT
         assertEquals(KeypadDock.RIGHT, vm.ui.value.keypadDockNow)
         vm.select(40)                                    // center cell -> back to preferred LEFT
         assertEquals(KeypadDock.LEFT, vm.ui.value.keypadDockNow)
