@@ -8,26 +8,27 @@ import kotlinx.serialization.json.Json
 /** All settings toggles. Defaults ALL OFF, matching the prototype. */
 data class Settings(
     val rowcol: Boolean = false,
-    val box: Boolean = false,
     val same: Boolean = false,
-    val conflicts: Boolean = false,
     val checkOnEntry: Boolean = false,
-    val autoStart: Boolean = false,
     val timer: Boolean = false,
     val sound: Boolean = false,
-    val plain: Boolean = false,
     /** Preferred floating-keypad margin — the enum name of the UI's KeypadDock (TOP/BOTTOM/LEFT/RIGHT).
      *  Stored as a String so this data-layer type stays independent of the UI enum. */
     val keypadMargin: String = "BOTTOM",
 )
 
+/**
+ * The stored shape. [v] stays at 2 even though box/conflicts/autoStart/plain were dropped in v1.4:
+ * [Codecs.decodeSettings] treats any other version as a full reset, so bumping it would silently
+ * wipe every existing install's timer/sound/keypadMargin. The retired keys still present in older
+ * blobs are skipped by the decoder's ignoreUnknownKeys instead.
+ */
 @Serializable
 internal data class SettingsDto(
     @SerialName("__v") val v: Int = 2,
-    val rowcol: Boolean = false, val box: Boolean = false, val same: Boolean = false,
-    val conflicts: Boolean = false, val checkOnEntry: Boolean = false,
-    val autoStart: Boolean = false, val timer: Boolean = false,
-    val sound: Boolean = false, val plain: Boolean = false,
+    val rowcol: Boolean = false, val same: Boolean = false,
+    val checkOnEntry: Boolean = false, val timer: Boolean = false,
+    val sound: Boolean = false,
     // New in v1.3; defaulted so older __v=2 blobs (without it) still decode to BOTTOM, not a reset.
     val keypadMargin: String = "BOTTOM",
 )
@@ -58,10 +59,8 @@ object Codecs {
 
     fun encodeSettings(s: Settings): String = json.encodeToString(
         SettingsDto(
-            rowcol = s.rowcol, box = s.box, same = s.same, conflicts = s.conflicts,
-            checkOnEntry = s.checkOnEntry, autoStart = s.autoStart,
-            timer = s.timer, sound = s.sound, plain = s.plain,
-            keypadMargin = s.keypadMargin,
+            rowcol = s.rowcol, same = s.same, checkOnEntry = s.checkOnEntry,
+            timer = s.timer, sound = s.sound, keypadMargin = s.keypadMargin,
         )
     )
 
@@ -70,10 +69,8 @@ object Codecs {
             ?: return Settings()
         if (dto.v != 2) return Settings()
         return Settings(
-            rowcol = dto.rowcol, box = dto.box, same = dto.same, conflicts = dto.conflicts,
-            checkOnEntry = dto.checkOnEntry, autoStart = dto.autoStart,
-            timer = dto.timer, sound = dto.sound, plain = dto.plain,
-            keypadMargin = dto.keypadMargin,
+            rowcol = dto.rowcol, same = dto.same, checkOnEntry = dto.checkOnEntry,
+            timer = dto.timer, sound = dto.sound, keypadMargin = dto.keypadMargin,
         )
     }
 

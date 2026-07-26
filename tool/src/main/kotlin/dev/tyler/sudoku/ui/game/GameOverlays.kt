@@ -195,19 +195,12 @@ private fun SettingsSheet(vm: GameViewModel, st: Settings) {
     // Labels drop the redundant "Highlight" prefix — the section header already says it.
     SheetLabel("Highlighting")
     ToggleRow("Row and column", on = st.rowcol) { vm.toggleSetting("rowcol") }
-    ToggleRow("Box", on = st.box) { vm.toggleSetting("box") }
     ToggleRow("Identical numbers", on = st.same) { vm.toggleSetting("same") }
-    ToggleRow("Conflicts", on = st.conflicts) { vm.toggleSetting("conflicts") }
     SheetLabel("Assistance")
     ToggleRow("Check guesses when entered", on = st.checkOnEntry) { vm.toggleSetting("checkOnEntry") }
-    ToggleRow("Start in auto notes mode", on = st.autoStart) { vm.toggleSetting("autoStart") }
     SheetLabel("Game")
     ToggleRow("Show timer", on = st.timer) { vm.toggleSetting("timer") }
     ToggleRow("Play sound on solve", on = st.sound) { vm.toggleSetting("sound") }
-    Box(Modifier.fillMaxWidth().height(1.dp).background(pal.btnLine))
-    ToggleRow("Plain mode", "Hide every highlight and check for a bare grid", st.plain) {
-        vm.toggleSetting("plain")
-    }
     Spacer(Modifier.height(8.dp))
     SolidButton("Done") { vm.dismissOverlay() }
 }
@@ -220,7 +213,7 @@ private fun HelpSheet(vm: GameViewModel) {
     Text(
         "Fill the grid so every row, column, and 3×3 box contains 1 through 9, with no repeats.\n\n" +
             "Tap a square, then a number. Normal places the number; Notes jots small pencil marks. " +
-            "Undo steps back. Repeated numbers are ringed so you can spot clashes.\n\n" +
+            "Undo steps back.\n\n" +
             "The ⋯ menu can check or reveal a square, or reset the puzzle. A new set of puzzles arrives each day.",
         color = pal.txtDim, fontSize = 15.sp, lineHeight = 22.sp,
     )
