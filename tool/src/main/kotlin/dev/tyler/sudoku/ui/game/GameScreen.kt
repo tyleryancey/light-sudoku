@@ -33,8 +33,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -164,10 +162,11 @@ class GameScreen(
     }
 
     // Floating number keypad: overlays the board (never steals its height) at one of four margins
-    // (ui.keypadDockNow). Covers at most 3 board cells deep so most of the grid stays visible; it's a
-    // wide card (control row + 2 digit rows) when docked TOP/BOTTOM and a narrow strip (3×3 digits +
-    // control stack) when docked LEFT/RIGHT. Flick it to another margin (see flickToMargin). An opaque
-    // framed card inset off the board edge; its root consumes stray taps so they don't hit the board.
+    // (ui.keypadDockNow). One design in two orientations — a 3×3 digit block plus two control lanes
+    // (✎/A/✕ and ↺/▾) — rotated 90° between them. LEFT/RIGHT covers 3 board columns × 5 rows;
+    // TOP/BOTTOM covers 5 columns × 3 rows, centred, leaving two board columns clear on each side.
+    // Flick it to another margin (see flickToMargin). An opaque framed card inset off the board edge;
+    // its root consumes stray taps so they don't hit the board.
     @Composable
     private fun FloatingKeypad(
         ui: GameUiState,
@@ -179,9 +178,10 @@ class GameScreen(
         val counts = IntArray(10)
         for (v in ui.values) if (v != 0) counts[v]++
 
-        // Sized so it covers at most 3 board cells on its docked axis: full width × 3 rows tall for
-        // TOP/BOTTOM, 3 columns wide for LEFT/RIGHT. Buttons therefore go sub-minimum, like the cells.
-        val sized = if (horizontal) modifier.fillMaxWidth().height(boardSize / 3)
+        // Sized to the same 3×5 cell footprint in either orientation: 5 cells wide × 3 tall when
+        // docked TOP/BOTTOM, 3 wide × 5 tall when docked LEFT/RIGHT. Buttons therefore go
+        // sub-minimum, like the cells.
+        val sized = if (horizontal) modifier.width(boardSize * 5 / 9).height(boardSize / 3)
         else modifier.width(boardSize / 3)
         // Shared chrome. flickToMargin catches a directional swipe anywhere on the panel; the no-op
         // tap-consumer (before the 4dp inset) keeps gutter taps from falling through to the board.
@@ -200,30 +200,32 @@ class GameScreen(
 
         val undoEnabled = ui.undo.isNotEmpty() && !ui.solved
         if (horizontal) {
-            // control row + two digit rows, each an equal third of the fixed panel height.
-            Column(card, verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Row(Modifier.fillMaxWidth().weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                    Row(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(9.dp)).background(pal.btn)) {
-                        SegButton("Normal", ui.mode == InputMode.NORMAL, Modifier.weight(1f).fillMaxHeight()) {
-                            viewModel.setMode(InputMode.NORMAL)
-                        }
-                        SegButton("Notes", ui.mode == InputMode.CANDIDATE, Modifier.weight(1f).fillMaxHeight()) {
-                            viewModel.setMode(InputMode.CANDIDATE)
+            // The side dock rotated a quarter turn: five equal columns, three keys tall. The digit
+            // block is laid out as three sibling columns (column c holds 1+c, 4+c, 7+c) rather than a
+            // nested 3×3 grid so every gap in the panel is the same 5dp — a nested grid would subtract
+            // its inner spacing twice and leave the digits narrower than the controls.
+            Row(card, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                for (c in 0 until 3) {
+                    Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        for (r in 0 until 3) {
+                            val d = r * 3 + c + 1
+                            NumKey(d, counts[d] >= 9, Modifier.fillMaxWidth().weight(1f))
                         }
                     }
-                    Spacer(Modifier.width(6.dp))
-                    AutoToggle(ui.autoCandidate) { viewModel.toggleAutoCandidate() }
-                    // Row-height glyph buttons (not IconGlyph's fixed 44dp box): the control row is
-                    // ~27dp tall on the LP3's 360dp-wide panel, so fixed-size/padded controls clip.
-                    HeaderGlyph("↺", "Undo", enabled = undoEnabled) { viewModel.undo() }
-                    HeaderGlyph("▾", "Hide keypad", enabled = true) { viewModel.deselect() }
                 }
-                Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    for (d in 1..5) NumKey(d, counts[d] >= 9, Modifier.weight(1f).fillMaxHeight())
+                Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    IconKey("✎", "Notes", on = ui.mode == InputMode.CANDIDATE, enabled = true, Modifier.fillMaxWidth().weight(1f)) {
+                        viewModel.setMode(if (ui.mode == InputMode.NORMAL) InputMode.CANDIDATE else InputMode.NORMAL)
+                    }
+                    IconKey("A", "Auto notes", on = ui.autoCandidate, enabled = true, Modifier.fillMaxWidth().weight(1f)) {
+                        viewModel.toggleAutoCandidate()
+                    }
+                    IconKey("✕", "Erase", on = false, enabled = true, Modifier.fillMaxWidth().weight(1f)) { viewModel.erase() }
                 }
-                Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    for (d in 6..9) NumKey(d, counts[d] >= 9, Modifier.weight(1f).fillMaxHeight())
-                    IconKey("✕", "Erase", on = false, enabled = true, Modifier.weight(1f).fillMaxHeight()) { viewModel.erase() }
+                Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    IconKey("↺", "Undo", on = false, enabled = undoEnabled, Modifier.fillMaxWidth().weight(1f)) { viewModel.undo() }
+                    // weight 2 here mirrors the 2-column span this key gets in the side dock.
+                    IconKey("▾", "Hide keypad", on = false, enabled = true, Modifier.fillMaxWidth().weight(2f)) { viewModel.deselect() }
                 }
             }
         } else {
@@ -275,66 +277,6 @@ class GameScreen(
                 onDrag = { change, amount -> change.consume(); dx += amount.x; dy += amount.y },
             )
         }
-
-    // Control-row glyph button sized by the row (fillMaxHeight), sharing the side dock's glyph
-    // vocabulary (↺ undo, ▾ hide) so both keypad layouts read the same.
-    @Composable
-    private fun HeaderGlyph(glyph: String, label: String, enabled: Boolean, onClick: () -> Unit) {
-        val pal = LocalSudokuPalette.current
-        Box(
-            Modifier.fillMaxHeight().clip(RoundedCornerShape(9.dp))
-                .clickable(enabled = enabled, onClickLabel = label, onClick = onClick)
-                .padding(horizontal = 10.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                glyph,
-                color = if (enabled) pal.txt else pal.txtFaint,
-                fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
-            )
-        }
-    }
-
-    // Compact labeled checkbox for auto notes mode; used in the horizontal control row.
-    @Composable
-    private fun AutoToggle(on: Boolean, onClick: () -> Unit) {
-        val pal = LocalSudokuPalette.current
-        Row(
-            Modifier.clip(RoundedCornerShape(9.dp)).clickable(onClick = onClick)
-                .padding(horizontal = 6.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                Modifier.size(16.dp).clip(RoundedCornerShape(4.dp))
-                    .background(if (on) pal.txt else pal.btn),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (on) Text("✓", color = pal.bg, fontSize = 10.sp)
-            }
-            Spacer(Modifier.width(5.dp))
-            Text("Auto", color = pal.txtDim, fontSize = 12.sp)
-        }
-    }
-
-    // Segmented mode button — a filled tile with a centered label; fills whatever size it's given.
-    @Composable
-    private fun SegButton(label: String, on: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-        val pal = LocalSudokuPalette.current
-        Box(
-            modifier.clip(RoundedCornerShape(9.dp)).background(if (on) pal.txt else pal.btn)
-                .clickable(onClick = onClick),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                label,
-                color = if (on) pal.bg else pal.txtDim,
-                fontSize = 14.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
-                // Pin to one line so a narrow slot ellipsizes instead of wrapping the label vertically.
-                maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 4.dp),
-            )
-        }
-    }
 
     // A digit key; fills whatever size the caller gives (board-cell sized inside the keypad).
     @Composable

@@ -28,7 +28,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.tyler.sudoku.engine.SudokuEngine
 import dev.tyler.sudoku.ui.theme.LocalSudokuPalette
 import dev.tyler.sudoku.ui.theme.SudokuPalette
 
@@ -41,7 +40,6 @@ private val NoFontPadding = TextStyle(platformStyle = PlatformTextStyle(includeF
 @Composable
 fun Board(vm: GameViewModel, ui: GameUiState, boardSize: Dp, modifier: Modifier = Modifier) {
     val pal = LocalSudokuPalette.current
-    val conflicts = vm.conflicts()
     val sel = ui.selected
     val selVal = if (sel >= 0) ui.values[sel] else 0
     val st = ui.settings
@@ -69,15 +67,13 @@ fun Board(vm: GameViewModel, ui: GameUiState, boardSize: Dp, modifier: Modifier 
 
                     // background value ramp (selection > samenum > peer > given-tile > bg)
                     val sameRowCol = sel >= 0 && (sel / 9 == r || sel % 9 == c)
-                    val sameBox = sel >= 0 && SudokuEngine.boxOf(i) == SudokuEngine.boxOf(sel)
                     val bg = when {
                         i == sel -> pal.sel
-                        !st.plain && st.same && selVal != 0 && v == selVal -> pal.sameNum
-                        !st.plain && ((st.rowcol && sameRowCol) || (st.box && sameBox)) -> pal.peer
+                        st.same && selVal != 0 && v == selVal -> pal.sameNum
+                        st.rowcol && sameRowCol -> pal.peer
                         fixed -> pal.givenTile
                         else -> pal.bg
                     }
-                    val conflict = !st.plain && st.conflicts && v != 0 && conflicts[i]
 
                     Box(
                         Modifier
@@ -99,7 +95,6 @@ fun Board(vm: GameViewModel, ui: GameUiState, boardSize: Dp, modifier: Modifier 
                             .clickable { vm.select(i) },
                         contentAlignment = Alignment.Center
                     ) {
-                        if (conflict) Box(Modifier.matchParentSize().border(2.dp, pal.ring))
                         if (ui.checkErr[i]) Box(
                             Modifier.align(Alignment.TopEnd).padding(3.dp).size(6.dp)
                                 .background(if (i == sel) pal.selInk else pal.dot, shape = CircleShape)

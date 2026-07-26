@@ -255,17 +255,6 @@ class GameViewModelTest {
         assertTrue(vm.ui.value.checkErr[i])
     }
 
-    @Test fun conflictsFlagsDuplicatesInRow() = runTest {
-        val vm = vm(); advanceUntilIdle()
-        val ui = vm.ui.value
-        val row = (0 until 9).first { r -> (0 until 9).count { !ui.givenMask[r * 9 + it] } >= 2 }
-        val cells = (0 until 9).map { row * 9 + it }.filter { !ui.givenMask[it] }
-        vm.select(cells[0]); vm.input(9)
-        vm.select(cells[1]); vm.input(9)
-        val bad = vm.conflicts()
-        assertTrue(bad[cells[0]] && bad[cells[1]])
-    }
-
     @Test fun resetRestoresCluesAndZeroesTimer() = runTest {
         val vm = vm(); advanceUntilIdle()
         val i = (0 until 81).first { !vm.ui.value.givenMask[it] }

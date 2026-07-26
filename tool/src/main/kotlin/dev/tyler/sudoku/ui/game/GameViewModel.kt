@@ -113,7 +113,7 @@ class GameViewModel(
         var autoAdd = IntArray(81)
         var autoRem = IntArray(81)
         var locked = BooleanArray(81)
-        var auto = settings.autoStart
+        var auto = false
         var solved = false
         var usedReveal = false
         var elapsed = 0
@@ -216,19 +216,15 @@ class GameViewModel(
         val st = s.settings
         val next = when (name) {
             "rowcol" -> st.copy(rowcol = !st.rowcol)
-            "box" -> st.copy(box = !st.box)
             "same" -> st.copy(same = !st.same)
-            "conflicts" -> st.copy(conflicts = !st.conflicts)
             "checkOnEntry" -> st.copy(checkOnEntry = !st.checkOnEntry)
-            "autoStart" -> st.copy(autoStart = !st.autoStart)
             "timer" -> st.copy(timer = !st.timer)
             "sound" -> st.copy(sound = !st.sound)
-            "plain" -> st.copy(plain = !st.plain)
             else -> st
         }
         _ui.value = s.copy(settings = next)
         // retroactively flag existing entries when enabling check-on-entry (matches prototype)
-        if (name == "checkOnEntry" && next.checkOnEntry && !next.plain) checkPuzzleSilent()
+        if (name == "checkOnEntry" && next.checkOnEntry) checkPuzzleSilent()
         viewModelScope.launch { store.set(StoreKeys.SETTINGS, Codecs.encodeSettings(next)) }
     }
 
@@ -449,7 +445,7 @@ class GameViewModel(
         val values = s.values.copyOf(); val cand = s.candidates.copyOf(); val err = s.checkErr.copyOf()
         val added = s.autoAdded.copyOf(); val removed = s.autoRemoved.copyOf()
         values[i] = d; cand[i] = 0; err[i] = false; added[i] = 0; removed[i] = 0
-        if (s.settings.checkOnEntry && !s.settings.plain) err[i] = d != s.solution[i]
+        if (s.settings.checkOnEntry) err[i] = d != s.solution[i]
         // courtesy: clear this digit from peers' manual pencil marks
         for (j in peersOf(i)) if (values[j] == 0 && (cand[j] and (1 shl (d - 1))) != 0) {
             cand[j] = cand[j] and (1 shl (d - 1)).inv()
@@ -632,23 +628,6 @@ class GameViewModel(
         )
         if (s.settings.sound) runCatching { playChime() }
         persistProgressWith(IndexEntry("done", sec))
-    }
-
-    // ---------- conflicts (computed for rendering) ----------
-    fun conflicts(): BooleanArray {
-        val bad = BooleanArray(81)
-        fun scan(idx: IntArray) {
-            val seen = HashMap<Int, MutableList<Int>>()
-            for (i in idx) {
-                val v = s.values[i]; if (v == 0) continue
-                seen.getOrPut(v) { mutableListOf() }.add(i)
-            }
-            for ((_, list) in seen) if (list.size > 1) for (i in list) bad[i] = true
-        }
-        for (r in 0 until 9) scan(IntArray(9) { r * 9 + it })
-        for (c in 0 until 9) scan(IntArray(9) { it * 9 + c })
-        for (b in 0 until 9) scan(IntArray(9) { (b / 3 * 3 + it / 3) * 9 + (b % 3 * 3 + it % 3) })
-        return bad
     }
 
     private fun peersOf(i: Int): List<Int> {
