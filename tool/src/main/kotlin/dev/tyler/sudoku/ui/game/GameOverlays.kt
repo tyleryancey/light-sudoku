@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.tyler.sudoku.data.Settings
@@ -48,19 +49,19 @@ fun GameOverlays(vm: GameViewModel, ui: GameUiState, onPastPuzzles: () -> Unit) 
         Overlay.HintPage -> BottomSheet(vm) { HintPage(vm) }
         Overlay.SettingsSheet -> CenterSheet(vm, scrollable = true) { SettingsSheet(vm, ui.settings) }
         Overlay.Help -> CenterSheet(vm, scrollable = true) { HelpSheet(vm) }
-        Overlay.ConfirmReset -> CenterSheet(vm) {
+        Overlay.ConfirmReset -> CenterSheet(vm, scrollable = true) {
             ConfirmSheet(
                 vm, "Reset puzzle",
                 "This clears everything you have entered. The clues stay.",
             ) { vm.confirmReset() }
         }
-        Overlay.ConfirmReveal -> CenterSheet(vm) {
+        Overlay.ConfirmReveal -> CenterSheet(vm, scrollable = true) {
             ConfirmSheet(
                 vm, "Reveal puzzle",
                 "This fills in the whole solution and ends the puzzle.",
             ) { vm.confirmRevealPuzzle() }
         }
-        is Overlay.Win -> CenterSheet(vm) { WinSheet(vm, ov, onPastPuzzles) }
+        is Overlay.Win -> CenterSheet(vm, scrollable = true) { WinSheet(vm, ov, onPastPuzzles) }
         Overlay.Paused -> PausedOverlay(vm)
     }
 }
@@ -89,8 +90,8 @@ private fun BottomSheet(vm: GameViewModel, content: @Composable () -> Unit) {
     }
 }
 
-// ConfirmSheet/WinSheet below still default to scrollable=false and can clip at large
-// system font scales — the same overflow class Help had before it opted into scrollable=true.
+// Every centered sheet opts into scrollable=true. Left at the default, overflow clips at BOTH ends
+// at once (the Column is centered in a fillMaxSize Box) with no way to reach the hidden part.
 @Composable
 private fun CenterSheet(vm: GameViewModel, scrollable: Boolean = false, content: @Composable () -> Unit) {
     val pal = LocalSudokuPalette.current
@@ -116,10 +117,15 @@ private fun SheetLabel(text: String) {
 }
 
 @Composable
-private fun Tile(label: String, caption: String? = null, onClick: () -> Unit) {
+private fun Tile(
+    label: String,
+    modifier: Modifier = Modifier,
+    caption: String? = null,
+    onClick: () -> Unit,
+) {
     val pal = LocalSudokuPalette.current
     Column(
-        Modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(10.dp))
+        modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(10.dp))
             .background(pal.bg).clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
@@ -135,16 +141,24 @@ private fun MenuMain(vm: GameViewModel) {
     val pal = LocalSudokuPalette.current
     SheetLabel("Help")
     Tile("Hint") { vm.showHintPage() }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(Modifier.weight(1f)) { Tile("Check square") { vm.checkCell() } }
-        Box(Modifier.weight(1f)) { Tile("Check puzzle") { vm.checkPuzzle() } }
+    // IntrinsicSize.Min so a label that wraps at a large font scale grows both tiles together,
+    // the same equalization the sheet button pairs use.
+    Row(
+        Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Tile("Check square", Modifier.weight(1f).fillMaxHeight()) { vm.checkCell() }
+        Tile("Check puzzle", Modifier.weight(1f).fillMaxHeight()) { vm.checkPuzzle() }
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(pal.btnLine))
     Spacer(Modifier.height(12.dp))
     SheetLabel("Reveal & reset")
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(Modifier.weight(1f)) { Tile("Reveal square") { vm.revealCell() } }
-        Box(Modifier.weight(1f)) { Tile("Reveal puzzle") { vm.requestRevealPuzzle() } }
+    Row(
+        Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Tile("Reveal square", Modifier.weight(1f).fillMaxHeight()) { vm.revealCell() }
+        Tile("Reveal puzzle", Modifier.weight(1f).fillMaxHeight()) { vm.requestRevealPuzzle() }
     }
     Tile("Reset puzzle") { vm.requestReset() }
 }
@@ -161,24 +175,21 @@ private fun HintPage(vm: GameViewModel) {
         Text("Hint", color = pal.txtDim, fontSize = 14.sp)
     }
     Spacer(Modifier.height(10.dp))
-    Tile("Point to a square", "Highlight the next solvable square — you place the number") { vm.pointHint() }
-    Tile("Fill in a square", "Fill the next square in for you") { vm.fillHint() }
+    Tile("Point to a square", caption = "Highlight the next solvable square — you place the number") {
+        vm.pointHint()
+    }
+    Tile("Fill in a square", caption = "Fill the next square in for you") { vm.fillHint() }
 }
 
 @Composable
-private fun ToggleRow(label: String, caption: String? = null, on: Boolean, onToggle: () -> Unit) {
+private fun ToggleRow(label: String, on: Boolean, onToggle: () -> Unit) {
     val pal = LocalSudokuPalette.current
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClick = onToggle)
             .padding(vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(label, color = pal.txt, fontSize = 15.sp)
-            if (caption != null) {
-                Text(caption, color = pal.txtDim, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
-            }
-        }
+        Text(label, color = pal.txt, fontSize = 15.sp, modifier = Modifier.weight(1f))
         // pill toggle
         Box(
             Modifier.width(42.dp).height(24.dp).clip(RoundedCornerShape(12.dp))
@@ -218,7 +229,7 @@ private fun HelpSheet(vm: GameViewModel) {
     Text(
         "Fill every row, column, and 3×3 box with 1–9, no repeats.\n\n" +
             "Tap a square, then a number.\n" +
-            "✎ jots small pencil marks.\n" +
+            "✎ toggles small pencil marks.\n" +
             "A fills those notes in for you.\n" +
             "↺ undoes. ▾ hides the keypad.\n" +
             "Flick the keypad to any edge.\n\n" +
@@ -241,8 +252,13 @@ private fun ConfirmSheet(vm: GameViewModel, title: String, message: String, onCo
         Modifier.fillMaxWidth().height(IntrinsicSize.Min),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        GhostButton("Cancel", Modifier.weight(1f).fillMaxHeight()) { vm.dismissOverlay() }
-        SolidButton("Confirm", Modifier.weight(1f).fillMaxHeight(), fill = true, onClick = onConfirm)
+        GhostButton("Cancel", Modifier.weight(1f).fillMaxHeight(), PairedButtonPadding) {
+            vm.dismissOverlay()
+        }
+        SolidButton(
+            "Confirm", Modifier.weight(1f).fillMaxHeight(),
+            fill = true, paddingH = PairedButtonPadding, onClick = onConfirm,
+        )
     }
 }
 
@@ -263,10 +279,13 @@ private fun WinSheet(vm: GameViewModel, win: Overlay.Win, onPastPuzzles: () -> U
             Modifier.fillMaxWidth().height(IntrinsicSize.Min),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            GhostButton("Past puzzles", Modifier.weight(1f).fillMaxHeight()) {
+            GhostButton("Past puzzles", Modifier.weight(1f).fillMaxHeight(), PairedButtonPadding) {
                 vm.dismissOverlay(); onPastPuzzles()
             }
-            SolidButton("Close", Modifier.weight(1f).fillMaxHeight(), fill = true) { vm.dismissOverlay() }
+            SolidButton(
+                "Close", Modifier.weight(1f).fillMaxHeight(),
+                fill = true, paddingH = PairedButtonPadding,
+            ) { vm.dismissOverlay() }
         }
     }
 }
@@ -285,21 +304,36 @@ private fun PausedOverlay(vm: GameViewModel) {
     }
 }
 
+// Standalone buttons hug their label, so their horizontal padding is what gives them their shape.
+// Paired buttons are weighted to half the row and don't need as much, and trimming it keeps a long
+// label like "Past puzzles" on one line at the default font scale.
+private val StandaloneButtonPadding = 20.dp
+private val PairedButtonPadding = 14.dp
+
 @Composable
 private fun SolidButton(
     label: String,
     modifier: Modifier = Modifier,
     fill: Boolean = false,
+    paddingH: Dp = StandaloneButtonPadding,
     onClick: () -> Unit,
 ) {
     val pal = LocalSudokuPalette.current
-    SheetButton(label, pal.txt, pal.bg, modifier.let { if (fill) it.fillMaxWidth() else it }, onClick)
+    SheetButton(
+        label, pal.txt, pal.bg,
+        modifier.let { if (fill) it.fillMaxWidth() else it }, paddingH, onClick,
+    )
 }
 
 @Composable
-private fun GhostButton(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun GhostButton(
+    label: String,
+    modifier: Modifier = Modifier,
+    paddingH: Dp = StandaloneButtonPadding,
+    onClick: () -> Unit,
+) {
     val pal = LocalSudokuPalette.current
-    SheetButton(label, pal.bg, pal.txt, modifier.fillMaxWidth(), onClick)
+    SheetButton(label, pal.bg, pal.txt, modifier.fillMaxWidth(), paddingH, onClick)
 }
 
 /**
@@ -313,10 +347,17 @@ private fun GhostButton(label: String, modifier: Modifier = Modifier, onClick: (
  * in [ConfirmSheet] and [WinSheet]) and the label stays centered in whatever it gets.
  */
 @Composable
-private fun SheetButton(label: String, bg: Color, ink: Color, modifier: Modifier, onClick: () -> Unit) {
+private fun SheetButton(
+    label: String,
+    bg: Color,
+    ink: Color,
+    modifier: Modifier,
+    paddingH: Dp,
+    onClick: () -> Unit,
+) {
     Box(
         modifier.clip(RoundedCornerShape(12.dp)).background(bg)
-            .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp),
+            .clickable(onClick = onClick).padding(horizontal = paddingH, vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(

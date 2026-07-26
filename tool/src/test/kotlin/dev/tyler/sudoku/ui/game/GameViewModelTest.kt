@@ -123,6 +123,31 @@ class GameViewModelTest {
         assertTrue(vm.ui.value.checkErr.none { it }, "marks cleared when the setting is turned off")
     }
 
+    @Test fun disablingCheckOnEntryAlsoClearsMarksHeldInUndoHistory() = runTest {
+        val vm = vm(); advanceUntilIdle()
+        val i = (0 until 81).first { !vm.ui.value.givenMask[it] }
+        val wrong = if (vm.ui.value.solution[i] == 1) 2 else 1
+        vm.toggleSetting("checkOnEntry"); advanceUntilIdle()
+        vm.select(i); vm.input(wrong); advanceUntilIdle()
+        assertTrue(vm.ui.value.checkErr[i], "wrong entry flagged while check-on-entry is on")
+
+        // Erase snapshots the CURRENT checkErr into an undo frame, then clears the live dot.
+        vm.erase(); advanceUntilIdle()
+        assertTrue(vm.ui.value.checkErr.none { it }, "erase clears the live mark")
+
+        vm.toggleSetting("checkOnEntry"); advanceUntilIdle()
+        assertTrue(vm.ui.value.checkErr.none { it }, "live marks cleared on disable")
+
+        // The frame still holds err = true; undo() restores it verbatim, so clearing only the live
+        // array would put the dot straight back with the setting off.
+        vm.undo(); advanceUntilIdle()
+        assertEquals(wrong, vm.ui.value.values[i], "undo restores the erased digit")
+        assertTrue(
+            vm.ui.value.checkErr.none { it },
+            "undo must not resurrect a check mark while check-on-entry is off",
+        )
+    }
+
     @Test fun backPressWithoutOverlayPopsAfterPersist() = runTest {
         val vm = vm(); advanceUntilIdle()
         assertFalse(vm.onBackPressed()); advanceUntilIdle()

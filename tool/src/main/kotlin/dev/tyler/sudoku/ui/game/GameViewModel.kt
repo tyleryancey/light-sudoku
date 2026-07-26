@@ -229,10 +229,24 @@ class GameViewModel(
         // puzzle are cleared too — checkErr is deliberately absent from ProgressDto and reset in
         // open(), so it is already session-scoped and not worth tracking provenance for.
         if (name == "checkOnEntry") {
-            if (next.checkOnEntry) checkPuzzleSilent()
-            else _ui.value = s.copy(checkErr = BooleanArray(81))
+            if (next.checkOnEntry) {
+                checkPuzzleSilent()
+            } else {
+                // Clear the marks in the undo history too, not just the live ones. Frames snapshot
+                // checkErr[i] at push time and undo() restores it verbatim, so wiping only the live
+                // array leaves a dot that a single ↺ brings back with the setting off — the very
+                // thing this clear exists to prevent.
+                _ui.value = s.copy(
+                    checkErr = BooleanArray(81),
+                    undo = s.undo.map { it.copy(err = false) },
+                )
+            }
         }
-        viewModelScope.launch { store.set(StoreKeys.SETTINGS, Codecs.encodeSettings(next)) }
+        // NonCancellable for the same reason setKeypadMargin needs it: popping the screen clears the
+        // ViewModelStore synchronously and cancels viewModelScope, which would drop this write.
+        viewModelScope.launch {
+            withContext(NonCancellable) { store.set(StoreKeys.SETTINGS, Codecs.encodeSettings(next)) }
+        }
     }
 
     private fun checkPuzzleSilent() {

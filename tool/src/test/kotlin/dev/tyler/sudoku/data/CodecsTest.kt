@@ -28,6 +28,31 @@ class CodecsTest {
         assertEquals("BOTTOM", Codecs.decodeSettings("""{"__v":2,"rowcol":true}""").keypadMargin)
     }
 
+    @Test fun settingsFromV13BlobKeepsSurvivingFieldsAndDropsRetiredOnes() {
+        // A real v1.3-shaped blob: same __v=2, but carrying the four keys retired in v1.4
+        // (box/conflicts/autoStart/plain). decodeSettings must skip them via ignoreUnknownKeys
+        // rather than throw — a throw is swallowed by runCatching and silently resets every
+        // user to all-off defaults, so nothing else in the suite would notice.
+        val v13 = """{"__v":2,"rowcol":true,"box":true,"same":false,"conflicts":true,""" +
+            """"checkOnEntry":true,"autoStart":true,"timer":true,"sound":false,""" +
+            """"plain":true,"keypadMargin":"TOP"}"""
+        val decoded = Codecs.decodeSettings(v13)
+
+        assertEquals(
+            Settings(rowcol = true, same = false, checkOnEntry = true, timer = true,
+                sound = false, keypadMargin = "TOP"),
+            decoded,
+            "surviving fields carry over; retired keys are ignored, not a reset",
+        )
+        // Re-encoding drops the retired keys but must not disturb __v or the survivors.
+        val reencoded = Codecs.encodeSettings(decoded)
+        assertTrue(reencoded.contains("\"__v\":2"), "version stays 2 — bumping it resets every install")
+        for (retired in listOf("box", "conflicts", "autoStart", "plain")) {
+            assertTrue(!reencoded.contains("\"$retired\""), "retired key $retired is not re-emitted")
+        }
+        assertEquals(decoded, Codecs.decodeSettings(reencoded), "survivors round-trip after the shrink")
+    }
+
     @Test fun progressRoundTrip() {
         val p = ProgressDto(
             v = List(81) { it % 10 }, c = List(81) { 0 }, l = List(81) { 0 },
