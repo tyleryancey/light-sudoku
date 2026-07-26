@@ -28,6 +28,56 @@ class CodecsTest {
         assertEquals("BOTTOM", Codecs.decodeSettings("""{"__v":2,"rowcol":true}""").keypadMargin)
     }
 
+    @Test fun settingsFromV13BlobKeepsSurvivingFieldsAndDropsRetiredOnes() {
+        // A real v1.3-shaped blob: same __v=2, but carrying the four keys retired in v1.4
+        // (box/conflicts/autoStart/plain). decodeSettings must skip them via ignoreUnknownKeys
+        // rather than throw — a throw is swallowed by runCatching and silently resets every
+        // user to all-off defaults, so nothing else in the suite would notice.
+        val v13 = """{"__v":2,"rowcol":true,"box":true,"same":false,"conflicts":true,""" +
+            """"checkOnEntry":true,"autoStart":true,"timer":true,"sound":false,""" +
+            """"plain":false,"keypadMargin":"TOP"}"""
+        val decoded = Codecs.decodeSettings(v13)
+
+        assertEquals(
+            Settings(rowcol = true, same = false, checkOnEntry = true, timer = true,
+                sound = false, keypadMargin = "TOP"),
+            decoded,
+            "surviving fields carry over; retired keys are ignored, not a reset",
+        )
+        // Re-encoding drops the retired keys but must not disturb __v or the survivors.
+        val reencoded = Codecs.encodeSettings(decoded)
+        assertTrue(reencoded.contains("\"__v\":2"), "version stays 2 — bumping it resets every install")
+        for (retired in listOf("box", "conflicts", "autoStart", "plain")) {
+            assertTrue(!reencoded.contains("\"$retired\""), "retired key $retired is not re-emitted")
+        }
+        assertEquals(decoded, Codecs.decodeSettings(reencoded), "survivors round-trip after the shrink")
+    }
+
+    @Test fun retiredPlainKeyHasNoInfluenceOnDecoding() {
+        // The retired settings are treated as if they had never shipped, so `plain` gets no vote:
+        // the surviving flags decode at face value whether it was on or off. Two blobs differing
+        // ONLY in `plain` must therefore decode identically.
+        fun blob(plain: Boolean) =
+            """{"__v":2,"rowcol":true,"box":true,"same":true,"conflicts":true,""" +
+                """"checkOnEntry":true,"autoStart":true,"timer":true,"sound":true,""" +
+                """"plain":$plain,"keypadMargin":"RIGHT"}"""
+
+        val expected = Settings(
+            rowcol = true, same = true, checkOnEntry = true,
+            timer = true, sound = true, keypadMargin = "RIGHT",
+        )
+        assertEquals(expected, Codecs.decodeSettings(blob(plain = false)))
+        assertEquals(
+            expected, Codecs.decodeSettings(blob(plain = true)),
+            "plain no longer masks anything — the flags it used to hide decode at face value",
+        )
+        assertEquals(
+            Codecs.decodeSettings(blob(plain = true)),
+            Codecs.decodeSettings(blob(plain = false)),
+            "the retired key cannot change the outcome",
+        )
+    }
+
     @Test fun progressRoundTrip() {
         val p = ProgressDto(
             v = List(81) { it % 10 }, c = List(81) { 0 }, l = List(81) { 0 },

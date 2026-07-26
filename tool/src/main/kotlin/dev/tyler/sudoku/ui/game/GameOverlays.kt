@@ -5,8 +5,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,6 +28,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.tyler.sudoku.data.Settings
@@ -45,19 +49,19 @@ fun GameOverlays(vm: GameViewModel, ui: GameUiState, onPastPuzzles: () -> Unit) 
         Overlay.HintPage -> BottomSheet(vm) { HintPage(vm) }
         Overlay.SettingsSheet -> CenterSheet(vm, scrollable = true) { SettingsSheet(vm, ui.settings) }
         Overlay.Help -> CenterSheet(vm, scrollable = true) { HelpSheet(vm) }
-        Overlay.ConfirmReset -> CenterSheet(vm) {
+        Overlay.ConfirmReset -> CenterSheet(vm, scrollable = true) {
             ConfirmSheet(
                 vm, "Reset puzzle",
                 "This clears everything you have entered. The clues stay.",
             ) { vm.confirmReset() }
         }
-        Overlay.ConfirmReveal -> CenterSheet(vm) {
+        Overlay.ConfirmReveal -> CenterSheet(vm, scrollable = true) {
             ConfirmSheet(
                 vm, "Reveal puzzle",
                 "This fills in the whole solution and ends the puzzle.",
             ) { vm.confirmRevealPuzzle() }
         }
-        is Overlay.Win -> CenterSheet(vm) { WinSheet(vm, ov, onPastPuzzles) }
+        is Overlay.Win -> CenterSheet(vm, scrollable = true) { WinSheet(vm, ov, onPastPuzzles) }
         Overlay.Paused -> PausedOverlay(vm)
     }
 }
@@ -86,8 +90,8 @@ private fun BottomSheet(vm: GameViewModel, content: @Composable () -> Unit) {
     }
 }
 
-// ConfirmSheet/WinSheet below still default to scrollable=false and can clip at large
-// system font scales — the same overflow class Help had before it opted into scrollable=true.
+// Every centered sheet opts into scrollable=true. Left at the default, overflow clips at BOTH ends
+// at once (the Column is centered in a fillMaxSize Box) with no way to reach the hidden part.
 @Composable
 private fun CenterSheet(vm: GameViewModel, scrollable: Boolean = false, content: @Composable () -> Unit) {
     val pal = LocalSudokuPalette.current
@@ -113,10 +117,15 @@ private fun SheetLabel(text: String) {
 }
 
 @Composable
-private fun Tile(label: String, caption: String? = null, onClick: () -> Unit) {
+private fun Tile(
+    label: String,
+    modifier: Modifier = Modifier,
+    caption: String? = null,
+    onClick: () -> Unit,
+) {
     val pal = LocalSudokuPalette.current
     Column(
-        Modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(10.dp))
+        modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(10.dp))
             .background(pal.bg).clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
@@ -132,16 +141,24 @@ private fun MenuMain(vm: GameViewModel) {
     val pal = LocalSudokuPalette.current
     SheetLabel("Help")
     Tile("Hint") { vm.showHintPage() }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(Modifier.weight(1f)) { Tile("Check square") { vm.checkCell() } }
-        Box(Modifier.weight(1f)) { Tile("Check puzzle") { vm.checkPuzzle() } }
+    // IntrinsicSize.Min so a label that wraps at a large font scale grows both tiles together,
+    // the same equalization the sheet button pairs use.
+    Row(
+        Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Tile("Check square", Modifier.weight(1f).fillMaxHeight()) { vm.checkCell() }
+        Tile("Check puzzle", Modifier.weight(1f).fillMaxHeight()) { vm.checkPuzzle() }
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(pal.btnLine))
     Spacer(Modifier.height(12.dp))
     SheetLabel("Reveal & reset")
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(Modifier.weight(1f)) { Tile("Reveal square") { vm.revealCell() } }
-        Box(Modifier.weight(1f)) { Tile("Reveal puzzle") { vm.requestRevealPuzzle() } }
+    Row(
+        Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Tile("Reveal square", Modifier.weight(1f).fillMaxHeight()) { vm.revealCell() }
+        Tile("Reveal puzzle", Modifier.weight(1f).fillMaxHeight()) { vm.requestRevealPuzzle() }
     }
     Tile("Reset puzzle") { vm.requestReset() }
 }
@@ -158,24 +175,21 @@ private fun HintPage(vm: GameViewModel) {
         Text("Hint", color = pal.txtDim, fontSize = 14.sp)
     }
     Spacer(Modifier.height(10.dp))
-    Tile("Point to a square", "Highlight the next solvable square — you place the number") { vm.pointHint() }
-    Tile("Fill in a square", "Fill the next square in for you") { vm.fillHint() }
+    Tile("Point to a square", caption = "Highlight the next solvable square — you place the number") {
+        vm.pointHint()
+    }
+    Tile("Fill in a square", caption = "Fill the next square in for you") { vm.fillHint() }
 }
 
 @Composable
-private fun ToggleRow(label: String, caption: String? = null, on: Boolean, onToggle: () -> Unit) {
+private fun ToggleRow(label: String, on: Boolean, onToggle: () -> Unit) {
     val pal = LocalSudokuPalette.current
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClick = onToggle)
             .padding(vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(label, color = pal.txt, fontSize = 15.sp)
-            if (caption != null) {
-                Text(caption, color = pal.txtDim, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
-            }
-        }
+        Text(label, color = pal.txt, fontSize = 15.sp, modifier = Modifier.weight(1f))
         // pill toggle
         Box(
             Modifier.width(42.dp).height(24.dp).clip(RoundedCornerShape(12.dp))
@@ -192,13 +206,13 @@ private fun SettingsSheet(vm: GameViewModel, st: Settings) {
     val pal = LocalSudokuPalette.current
     Text("Settings", color = pal.txt, fontSize = 20.sp, fontWeight = FontWeight.Bold,
         modifier = Modifier.padding(bottom = 6.dp))
-    // Labels drop the redundant "Highlight" prefix — the section header already says it.
-    SheetLabel("Highlighting")
-    ToggleRow("Row and column", on = st.rowcol) { vm.toggleSetting("rowcol") }
-    ToggleRow("Identical numbers", on = st.same) { vm.toggleSetting("same") }
-    SheetLabel("Assistance")
+    // Five toggles, no section headers: with this few rows three headers cost ~60dp of a
+    // 349dp sheet, and that was the difference between fitting the LP3's panel and
+    // scrolling. The two highlight rows take back the "Highlight" prefix the old
+    // "Highlighting" header used to supply.
+    ToggleRow("Highlight row and column", on = st.rowcol) { vm.toggleSetting("rowcol") }
+    ToggleRow("Highlight identical numbers", on = st.same) { vm.toggleSetting("same") }
     ToggleRow("Check guesses when entered", on = st.checkOnEntry) { vm.toggleSetting("checkOnEntry") }
-    SheetLabel("Game")
     ToggleRow("Show timer", on = st.timer) { vm.toggleSetting("timer") }
     ToggleRow("Play sound on solve", on = st.sound) { vm.toggleSetting("sound") }
     Spacer(Modifier.height(8.dp))
@@ -210,12 +224,18 @@ private fun HelpSheet(vm: GameViewModel) {
     val pal = LocalSudokuPalette.current
     Text("How to play", color = pal.txt, fontSize = 20.sp, fontWeight = FontWeight.Bold,
         modifier = Modifier.padding(bottom = 12.dp))
+    // Short lines at 14sp/20sp: the old prose ran ~308dp against a ~254dp budget on the
+    // LP3, so it always scrolled. Keep any edit here under ~11 lines.
     Text(
-        "Fill the grid so every row, column, and 3×3 box contains 1 through 9, with no repeats.\n\n" +
-            "Tap a square, then a number. Normal places the number; Notes jots small pencil marks. " +
-            "Undo steps back.\n\n" +
-            "The ⋯ menu can check or reveal a square, or reset the puzzle. A new set of puzzles arrives each day.",
-        color = pal.txtDim, fontSize = 15.sp, lineHeight = 22.sp,
+        "Fill every row, column, and 3×3 box with 1–9, no repeats.\n\n" +
+            "Tap a square, then a number.\n" +
+            "✎ toggles small pencil marks.\n" +
+            "A fills those notes in for you.\n" +
+            "↺ undoes. ▾ hides the keypad.\n" +
+            "Flick the keypad to any edge.\n\n" +
+            "The ⋯ menu can check, reveal, or reset.\n" +
+            "New puzzles arrive each day.",
+        color = pal.txtDim, fontSize = 14.sp, lineHeight = 20.sp,
     )
     Spacer(Modifier.height(16.dp))
     SolidButton("Got it") { vm.dismissOverlay() }
@@ -227,9 +247,18 @@ private fun ConfirmSheet(vm: GameViewModel, title: String, message: String, onCo
     Text(title, color = pal.txt, fontSize = 20.sp, fontWeight = FontWeight.Bold)
     Text(message, color = pal.txtDim, fontSize = 15.sp, lineHeight = 21.sp,
         modifier = Modifier.padding(top = 8.dp, bottom = 16.dp))
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Box(Modifier.weight(1f)) { GhostButton("Cancel") { vm.dismissOverlay() } }
-        Box(Modifier.weight(1f)) { SolidButton("Confirm", fill = true, onClick = onConfirm) }
+    // IntrinsicSize.Min + fillMaxHeight: if either label wraps, both buttons grow together.
+    Row(
+        Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        GhostButton("Cancel", Modifier.weight(1f).fillMaxHeight(), PairedButtonPadding) {
+            vm.dismissOverlay()
+        }
+        SolidButton(
+            "Confirm", Modifier.weight(1f).fillMaxHeight(),
+            fill = true, paddingH = PairedButtonPadding, onClick = onConfirm,
+        )
     }
 }
 
@@ -244,11 +273,19 @@ private fun WinSheet(vm: GameViewModel, win: Overlay.Win, onPastPuzzles: () -> U
             fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(vertical = 14.dp),
         )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.weight(1f)) {
-                GhostButton("Past puzzles") { vm.dismissOverlay(); onPastPuzzles() }
+        // "Past puzzles" wraps to two lines in its half-width slot where "Close" doesn't;
+        // IntrinsicSize.Min sizes the row to the taller of the two and both fill it.
+        Row(
+            Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            GhostButton("Past puzzles", Modifier.weight(1f).fillMaxHeight(), PairedButtonPadding) {
+                vm.dismissOverlay(); onPastPuzzles()
             }
-            Box(Modifier.weight(1f)) { SolidButton("Close", fill = true) { vm.dismissOverlay() } }
+            SolidButton(
+                "Close", Modifier.weight(1f).fillMaxHeight(),
+                fill = true, paddingH = PairedButtonPadding,
+            ) { vm.dismissOverlay() }
         }
     }
 }
@@ -267,27 +304,65 @@ private fun PausedOverlay(vm: GameViewModel) {
     }
 }
 
+// Standalone buttons hug their label, so their horizontal padding is what gives them their shape.
+// Paired buttons are weighted to half the row and don't need as much, and trimming it keeps a long
+// label like "Past puzzles" on one line at the default font scale.
+private val StandaloneButtonPadding = 20.dp
+private val PairedButtonPadding = 14.dp
+
 @Composable
-private fun SolidButton(label: String, fill: Boolean = false, onClick: () -> Unit) {
+private fun SolidButton(
+    label: String,
+    modifier: Modifier = Modifier,
+    fill: Boolean = false,
+    paddingH: Dp = StandaloneButtonPadding,
+    onClick: () -> Unit,
+) {
     val pal = LocalSudokuPalette.current
-    Text(
-        label, color = pal.bg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        modifier = Modifier
-            .let { if (fill) it.fillMaxWidth() else it }
-            .clip(RoundedCornerShape(12.dp)).background(pal.txt)
-            .clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 12.dp),
+    SheetButton(
+        label, pal.txt, pal.bg,
+        modifier.let { if (fill) it.fillMaxWidth() else it }, paddingH, onClick,
     )
 }
 
 @Composable
-private fun GhostButton(label: String, onClick: () -> Unit) {
+private fun GhostButton(
+    label: String,
+    modifier: Modifier = Modifier,
+    paddingH: Dp = StandaloneButtonPadding,
+    onClick: () -> Unit,
+) {
     val pal = LocalSudokuPalette.current
-    Text(
-        label, color = pal.txt, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        modifier = Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp)).background(pal.bg)
-            .clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 12.dp),
-    )
+    SheetButton(label, pal.bg, pal.txt, modifier.fillMaxWidth(), paddingH, onClick)
+}
+
+/**
+ * A sheet button: a centered label on a filled tile.
+ *
+ * The [Box] matters. These used to be bare [Text]s, which meant a side-by-side pair
+ * couldn't be equalized — a stretched Text draws at the top of its line box, and
+ * textAlign only centers horizontally. So when one label wrapped ("Past puzzles" in the
+ * win sheet) and its neighbour didn't, the two buttons rendered at different heights.
+ * With a Box, the caller can hand both the same height (see the IntrinsicSize.Min rows
+ * in [ConfirmSheet] and [WinSheet]) and the label stays centered in whatever it gets.
+ */
+@Composable
+private fun SheetButton(
+    label: String,
+    bg: Color,
+    ink: Color,
+    modifier: Modifier,
+    paddingH: Dp,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier.clip(RoundedCornerShape(12.dp)).background(bg)
+            .clickable(onClick = onClick).padding(horizontal = paddingH, vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label, color = ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+        )
+    }
 }

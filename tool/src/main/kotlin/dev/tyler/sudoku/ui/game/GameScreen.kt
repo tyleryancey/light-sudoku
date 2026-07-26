@@ -181,8 +181,21 @@ class GameScreen(
         // Sized to the same 3×5 cell footprint in either orientation: 5 cells wide × 3 tall when
         // docked TOP/BOTTOM, 3 wide × 5 tall when docked LEFT/RIGHT. Buttons therefore go
         // sub-minimum, like the cells.
+        //
+        // BOTH axes are pinned. Letting the 5-cell axis size itself from its content would overrun
+        // the footprint by ~10dp (5 keys + 4 gaps + padding), bleeding past the five rows/columns
+        // GameViewModel.hides() assumes are covered — so a cell just outside the band could be
+        // partly occluded with no auto-avoid hop.
         val sized = if (horizontal) modifier.width(boardSize * 5 / 9).height(boardSize / 3)
-        else modifier.width(boardSize / 3)
+        else modifier.width(boardSize / 3).height(boardSize * 5 / 9)
+
+        // Key extent along the 3-key axis, after the card's 4dp outer inset + 6dp inner padding and
+        // the two 5dp gaps. The digit lanes get this via weight(1f); the ↺/▾ lane needs it spelled
+        // out because it holds two children (one gap) where the others hold three (two gaps), and
+        // Arrangement.spacedBy subtracts total spacing BEFORE splitting by weight — so plain 1f/2f
+        // weights there would make ↺ ~1.7dp taller than a digit key and misalign the lane.
+        val keyShort = ((boardSize / 3 - 20.dp - 10.dp) / 3).coerceAtLeast(0.dp)
+        val keyLong = keyShort * 2 + 5.dp   // ▾ spans two keys plus the gap between them
         // Shared chrome. flickToMargin catches a directional swipe anywhere on the panel; the no-op
         // tap-consumer (before the 4dp inset) keeps gutter taps from falling through to the board.
         // Digit taps go to the child keys — a stationary tap is never read as a drag/flick.
@@ -223,24 +236,24 @@ class GameScreen(
                     IconKey("✕", "Erase", on = false, enabled = true, Modifier.fillMaxWidth().weight(1f)) { viewModel.erase() }
                 }
                 Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    IconKey("↺", "Undo", on = false, enabled = undoEnabled, Modifier.fillMaxWidth().weight(1f)) { viewModel.undo() }
-                    // weight 2 here mirrors the 2-column span this key gets in the side dock.
-                    IconKey("▾", "Hide keypad", on = false, enabled = true, Modifier.fillMaxWidth().weight(2f)) { viewModel.deselect() }
+                    IconKey("↺", "Undo", on = false, enabled = undoEnabled, Modifier.fillMaxWidth().height(keyShort)) { viewModel.undo() }
+                    // ▾ spans two keys here, mirroring the two columns it spans in the side dock.
+                    IconKey("▾", "Hide keypad", on = false, enabled = true, Modifier.fillMaxWidth().height(keyLong)) { viewModel.deselect() }
                 }
             }
         } else {
-            // 3×3 digit grid + a compact control stack; every key one board-cell tall.
-            val keyH = ((boardSize / 9) - 6.dp).coerceAtLeast(0.dp)
+            // 3×3 digit grid + a compact control stack. The five rows share the pinned height by
+            // weight, so the panel occupies exactly its five board rows.
             Column(card, verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 for (r in 0 until 3) {
-                    Row(Modifier.fillMaxWidth().height(keyH), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         for (c in 0 until 3) {
                             val d = r * 3 + c + 1
                             NumKey(d, counts[d] >= 9, Modifier.weight(1f).fillMaxHeight())
                         }
                     }
                 }
-                Row(Modifier.fillMaxWidth().height(keyH), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     IconKey("✎", "Notes", on = ui.mode == InputMode.CANDIDATE, enabled = true, Modifier.weight(1f).fillMaxHeight()) {
                         viewModel.setMode(if (ui.mode == InputMode.NORMAL) InputMode.CANDIDATE else InputMode.NORMAL)
                     }
@@ -249,9 +262,10 @@ class GameScreen(
                     }
                     IconKey("✕", "Erase", on = false, enabled = true, Modifier.weight(1f).fillMaxHeight()) { viewModel.erase() }
                 }
-                Row(Modifier.fillMaxWidth().height(keyH), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    IconKey("↺", "Undo", on = false, enabled = undoEnabled, Modifier.weight(1f).fillMaxHeight()) { viewModel.undo() }
-                    IconKey("▾", "Hide keypad", on = false, enabled = true, Modifier.weight(2f).fillMaxHeight()) { viewModel.deselect() }
+                Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    // Explicit widths, not 1f/2f weights — see keyShort above.
+                    IconKey("↺", "Undo", on = false, enabled = undoEnabled, Modifier.width(keyShort).fillMaxHeight()) { viewModel.undo() }
+                    IconKey("▾", "Hide keypad", on = false, enabled = true, Modifier.width(keyLong).fillMaxHeight()) { viewModel.deselect() }
                 }
             }
         }

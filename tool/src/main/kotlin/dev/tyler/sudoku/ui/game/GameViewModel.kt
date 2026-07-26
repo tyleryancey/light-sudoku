@@ -100,7 +100,20 @@ class GameViewModel(
 
     // ---------- open / generate ----------
     private suspend fun open() {
-        val settings = Codecs.decodeSettings(store.get(StoreKeys.SETTINGS))
+        val rawSettings = store.get(StoreKeys.SETTINGS)
+        val settings = Codecs.decodeSettings(rawSettings)
+        // Retire the dropped keys from storage on first load, so an upgraded install ends up in the
+        // state it would have been in had box/conflicts/autoStart/plain never existed: the surviving
+        // flags keep their values, and the retired ones leave no residue rather than sitting in the
+        // blob until some unrelated settings write happens to rewrite it.
+        //
+        // Comparing against the re-encoded form rather than scanning for known key names keeps this
+        // correct for any future shrink, and also normalizes stale-__v and corrupt blobs, both of
+        // which decodeSettings already resolves to defaults.
+        val canonical = Codecs.encodeSettings(settings)
+        if (rawSettings != null && rawSettings != canonical) {
+            withContext(NonCancellable) { store.set(StoreKeys.SETTINGS, canonical) }
+        }
         val cacheKey = StoreKeys.puzzle(dateKey, difficulty)
         val p = Codecs.decodePuzzle(store.get(cacheKey)) ?: withContext(generationDispatcher) {
             SudokuEngine.generatePuzzle(dateKey, difficulty)
@@ -223,9 +236,30 @@ class GameViewModel(
             else -> st
         }
         _ui.value = s.copy(settings = next)
-        // retroactively flag existing entries when enabling check-on-entry (matches prototype)
-        if (name == "checkOnEntry" && next.checkOnEntry) checkPuzzleSilent()
-        viewModelScope.launch { store.set(StoreKeys.SETTINGS, Codecs.encodeSettings(next)) }
+        // Check-on-entry is symmetric: enabling retroactively flags existing entries (matches the
+        // prototype), disabling clears every mark. Without the clear, a dot raised while the setting
+        // was on stayed on the board with nothing left to explain it. Marks from the ⋯ menu's Check
+        // puzzle are cleared too — checkErr is deliberately absent from ProgressDto and reset in
+        // open(), so it is already session-scoped and not worth tracking provenance for.
+        if (name == "checkOnEntry") {
+            if (next.checkOnEntry) {
+                checkPuzzleSilent()
+            } else {
+                // Clear the marks in the undo history too, not just the live ones. Frames snapshot
+                // checkErr[i] at push time and undo() restores it verbatim, so wiping only the live
+                // array leaves a dot that a single ↺ brings back with the setting off — the very
+                // thing this clear exists to prevent.
+                _ui.value = s.copy(
+                    checkErr = BooleanArray(81),
+                    undo = s.undo.map { it.copy(err = false) },
+                )
+            }
+        }
+        // NonCancellable for the same reason setKeypadMargin needs it: popping the screen clears the
+        // ViewModelStore synchronously and cancels viewModelScope, which would drop this write.
+        viewModelScope.launch {
+            withContext(NonCancellable) { store.set(StoreKeys.SETTINGS, Codecs.encodeSettings(next)) }
+        }
     }
 
     private fun checkPuzzleSilent() {
@@ -365,12 +399,25 @@ class GameViewModel(
     private fun marginPref(settings: Settings = s.settings): KeypadDock =
         runCatching { KeypadDock.valueOf(settings.keypadMargin) }.getOrDefault(KeypadDock.BOTTOM)
 
-    /** True if a keypad docked at [m] would cover [i]'s 3-cell band (rows for TOP/BOTTOM, cols for LEFT/RIGHT). */
-    private fun hides(m: KeypadDock, i: Int): Boolean = when (m) {
-        KeypadDock.TOP -> i / 9 in 0..2
-        KeypadDock.BOTTOM -> i / 9 in 6..8
-        KeypadDock.LEFT -> i % 9 in 0..2
-        KeypadDock.RIGHT -> i % 9 in 6..8
+    /**
+     * True if a keypad docked at [m] would actually cover cell [i].
+     *
+     * Both orientations occupy the same 3×5 cell footprint, centred on their margin (see
+     * FloatingKeypad): TOP/BOTTOM span rows 0..2 / 6..8 across the middle five COLUMNS, and
+     * LEFT/RIGHT span columns 0..2 / 6..8 across the middle five ROWS. Testing only the band axis
+     * would over-report — a BOTTOM-docked keypad never reaches column 0, so treating a row-8 corner
+     * cell as hidden would hop the keypad for no reason and make it jump between TOP and BOTTOM as
+     * the selection moves along the bottom row.
+     */
+    private fun hides(m: KeypadDock, i: Int): Boolean {
+        val row = i / 9
+        val col = i % 9
+        return when (m) {
+            KeypadDock.TOP -> row in 0..2 && col in 2..6
+            KeypadDock.BOTTOM -> row in 6..8 && col in 2..6
+            KeypadDock.LEFT -> col in 0..2 && row in 2..6
+            KeypadDock.RIGHT -> col in 6..8 && row in 2..6
+        }
     }
 
     private fun opposite(m: KeypadDock): KeypadDock = when (m) {
@@ -382,8 +429,9 @@ class GameViewModel(
 
     /**
      * Auto-avoid placement: dock at the [preferred] margin unless it would hide the selected cell, in
-     * which case use the OPPOSITE margin. A cell in one margin's 3-cell band can't be in its opposite's
-     * band, so the opposite always un-hides it. Pure — this is the SELECTION-time transition; an
+     * which case use the OPPOSITE margin. A cell inside one margin's band can't also be inside its
+     * opposite's band (the two bands are disjoint on that axis), so the opposite always un-hides it —
+     * this still holds with [hides] checking both axes. Pure — this is the SELECTION-time transition; an
      * explicit flick sets [GameUiState.keypadDockNow] directly (see [setKeypadMargin]) and thus wins
      * over this. [selected] == -1 -> preferred unchanged (keypad hidden anyway).
      */

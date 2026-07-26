@@ -65,9 +65,14 @@ object Codecs {
     )
 
     fun decodeSettings(raw: String?): Settings {
-        val dto = raw?.let { runCatching { json.decodeFromString<SettingsDto>(it) }.getOrNull() }
+        if (raw == null) return Settings()
+        val dto = runCatching { json.decodeFromString<SettingsDto>(raw) }.getOrNull()
             ?: return Settings()
         if (dto.v != 2) return Settings()
+        // The retired keys — box/conflicts/autoStart/plain — get no say here. Decoding reads the
+        // surviving flags at face value, exactly as it would have if those settings had never
+        // shipped; ignoreUnknownKeys drops the stale entries and GameViewModel.open() purges them
+        // from storage on first load.
         return Settings(
             rowcol = dto.rowcol, same = dto.same, checkOnEntry = dto.checkOnEntry,
             timer = dto.timer, sound = dto.sound, keypadMargin = dto.keypadMargin,

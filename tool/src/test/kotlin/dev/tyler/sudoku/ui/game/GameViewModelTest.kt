@@ -3,6 +3,7 @@ package dev.tyler.sudoku.ui.game
 import dev.tyler.sudoku.data.Codecs
 import dev.tyler.sudoku.data.InMemoryKeyValueStore
 import dev.tyler.sudoku.data.ProgressDto
+import dev.tyler.sudoku.data.Settings
 import dev.tyler.sudoku.data.StoreKeys
 import dev.tyler.sudoku.engine.SudokuEngine
 import kotlinx.coroutines.Dispatchers
@@ -108,6 +109,74 @@ class GameViewModelTest {
         assertTrue(vm.ui.value.settings.checkOnEntry)
         assertTrue(vm.ui.value.checkErr[editable], "existing wrong entry flagged retroactively")
         assertTrue(Codecs.decodeSettings(store.map[StoreKeys.SETTINGS]).checkOnEntry, "persisted")
+    }
+
+    @Test fun disablingCheckOnEntryClearsMarks() = runTest {
+        val vm = vm(); advanceUntilIdle()
+        val i = (0 until 81).first { !vm.ui.value.givenMask[it] }
+        val wrong = if (vm.ui.value.solution[i] == 1) 2 else 1
+        vm.toggleSetting("checkOnEntry"); advanceUntilIdle()
+        vm.select(i); vm.input(wrong); advanceUntilIdle()
+        assertTrue(vm.ui.value.checkErr[i], "wrong entry flagged while check-on-entry is on")
+
+        vm.toggleSetting("checkOnEntry"); advanceUntilIdle()
+        assertFalse(vm.ui.value.settings.checkOnEntry)
+        assertTrue(vm.ui.value.checkErr.none { it }, "marks cleared when the setting is turned off")
+    }
+
+    @Test fun openPurgesRetiredSettingsKeysFromStorage() = runTest {
+        // A v1.3 blob carrying all four retired keys, with plain mode on.
+        store.map[StoreKeys.SETTINGS] = """{"__v":2,"rowcol":true,"box":true,"same":true,""" +
+            """"conflicts":true,"checkOnEntry":true,"autoStart":true,"timer":true,""" +
+            """"sound":true,"plain":true,"keypadMargin":"RIGHT"}"""
+        val vm = vm(); advanceUntilIdle()
+
+        val stored = store.map[StoreKeys.SETTINGS]!!
+        for (retired in listOf("box", "conflicts", "autoStart", "plain")) {
+            assertFalse(stored.contains("\"$retired\""), "$retired purged from storage on first load")
+        }
+        // Surviving flags keep their stored values — the retired keys, plain included, get no say.
+        val settings = vm.ui.value.settings
+        assertTrue(settings.timer && settings.sound)
+        assertEquals("RIGHT", settings.keypadMargin)
+        assertTrue(
+            settings.rowcol && settings.same && settings.checkOnEntry,
+            "surviving flags decode at face value, as if the retired settings had never existed",
+        )
+        assertEquals(stored, Codecs.encodeSettings(settings), "storage matches the live settings")
+    }
+
+    @Test fun openLeavesAnAlreadyCanonicalSettingsBlobAlone() = runTest {
+        val canonical = Codecs.encodeSettings(Settings(timer = true, keypadMargin = "LEFT"))
+        store.map[StoreKeys.SETTINGS] = canonical
+        val vm = vm(); advanceUntilIdle()
+        assertEquals(canonical, store.map[StoreKeys.SETTINGS], "no rewrite when nothing needs purging")
+        assertTrue(vm.ui.value.settings.timer)
+    }
+
+    @Test fun disablingCheckOnEntryAlsoClearsMarksHeldInUndoHistory() = runTest {
+        val vm = vm(); advanceUntilIdle()
+        val i = (0 until 81).first { !vm.ui.value.givenMask[it] }
+        val wrong = if (vm.ui.value.solution[i] == 1) 2 else 1
+        vm.toggleSetting("checkOnEntry"); advanceUntilIdle()
+        vm.select(i); vm.input(wrong); advanceUntilIdle()
+        assertTrue(vm.ui.value.checkErr[i], "wrong entry flagged while check-on-entry is on")
+
+        // Erase snapshots the CURRENT checkErr into an undo frame, then clears the live dot.
+        vm.erase(); advanceUntilIdle()
+        assertTrue(vm.ui.value.checkErr.none { it }, "erase clears the live mark")
+
+        vm.toggleSetting("checkOnEntry"); advanceUntilIdle()
+        assertTrue(vm.ui.value.checkErr.none { it }, "live marks cleared on disable")
+
+        // The frame still holds err = true; undo() restores it verbatim, so clearing only the live
+        // array would put the dot straight back with the setting off.
+        vm.undo(); advanceUntilIdle()
+        assertEquals(wrong, vm.ui.value.values[i], "undo restores the erased digit")
+        assertTrue(
+            vm.ui.value.checkErr.none { it },
+            "undo must not resurrect a check mark while check-on-entry is off",
+        )
     }
 
     @Test fun backPressWithoutOverlayPopsAfterPersist() = runTest {
@@ -556,12 +625,18 @@ class GameViewModelTest {
 
     // ---------- flickable keypad: preferred margin + auto-avoid across all 4 margins ----------
 
-    // A margin's 3-cell band (mirrors the production logic; used only by the invariant test below).
-    private fun hidesCell(m: KeypadDock, i: Int) = when (m) {
-        KeypadDock.TOP -> i / 9 in 0..2
-        KeypadDock.BOTTOM -> i / 9 in 6..8
-        KeypadDock.LEFT -> i % 9 in 0..2
-        KeypadDock.RIGHT -> i % 9 in 6..8
+    // The keypad's real 3×5 cell footprint, centred on its margin (mirrors the production logic;
+    // used only by the invariant test below). Both axes matter: a BOTTOM dock spans rows 6..8 but
+    // only the middle five columns, so the bottom corners stay clear.
+    private fun hidesCell(m: KeypadDock, i: Int): Boolean {
+        val row = i / 9
+        val col = i % 9
+        return when (m) {
+            KeypadDock.TOP -> row in 0..2 && col in 2..6
+            KeypadDock.BOTTOM -> row in 6..8 && col in 2..6
+            KeypadDock.LEFT -> col in 0..2 && row in 2..6
+            KeypadDock.RIGHT -> col in 6..8 && row in 2..6
+        }
     }
 
     @Test fun keypadDockUsesPreferredWhenItDoesNotHideCell() = runTest {
@@ -572,10 +647,23 @@ class GameViewModelTest {
 
     @Test fun keypadDockHopsToOppositeWhenPreferredHides() = runTest {
         val vm = vm(); advanceUntilIdle()
-        assertEquals(KeypadDock.TOP, vm.keypadDock(63, KeypadDock.BOTTOM), "row-7 cell under BOTTOM -> TOP")
-        assertEquals(KeypadDock.BOTTOM, vm.keypadDock(9, KeypadDock.TOP), "row-1 cell under TOP -> BOTTOM")
-        assertEquals(KeypadDock.RIGHT, vm.keypadDock(1, KeypadDock.LEFT), "col-1 cell under LEFT -> RIGHT")
-        assertEquals(KeypadDock.LEFT, vm.keypadDock(7, KeypadDock.RIGHT), "col-7 cell under RIGHT -> LEFT")
+        // Each cell is inside the dock's real footprint — in the band AND in the middle five
+        // cells of the cross axis, since the keypad is only 5 cells across.
+        assertEquals(KeypadDock.TOP, vm.keypadDock(67, KeypadDock.BOTTOM), "row-7 col-4 under BOTTOM -> TOP")
+        assertEquals(KeypadDock.BOTTOM, vm.keypadDock(13, KeypadDock.TOP), "row-1 col-4 under TOP -> BOTTOM")
+        assertEquals(KeypadDock.RIGHT, vm.keypadDock(37, KeypadDock.LEFT), "row-4 col-1 under LEFT -> RIGHT")
+        assertEquals(KeypadDock.LEFT, vm.keypadDock(43, KeypadDock.RIGHT), "row-4 col-7 under RIGHT -> LEFT")
+    }
+
+    @Test fun keypadDockKeepsPreferredForCellsBesideTheDock() = runTest {
+        val vm = vm(); advanceUntilIdle()
+        // The dock is only 5 cells across, so the four board corners are never covered by any
+        // margin. Hopping for them would make the keypad jump as the selection slides along an edge.
+        assertEquals(KeypadDock.BOTTOM, vm.keypadDock(72, KeypadDock.BOTTOM), "row-8 col-0 is beside a BOTTOM dock")
+        assertEquals(KeypadDock.BOTTOM, vm.keypadDock(80, KeypadDock.BOTTOM), "row-8 col-8 is beside a BOTTOM dock")
+        assertEquals(KeypadDock.TOP, vm.keypadDock(0, KeypadDock.TOP), "row-0 col-0 is beside a TOP dock")
+        assertEquals(KeypadDock.LEFT, vm.keypadDock(0, KeypadDock.LEFT), "row-0 col-0 is beside a LEFT dock")
+        assertEquals(KeypadDock.RIGHT, vm.keypadDock(8, KeypadDock.RIGHT), "row-0 col-8 is beside a RIGHT dock")
     }
 
     @Test fun keypadDockNoSelectionReturnsPreferred() = runTest {
@@ -593,10 +681,10 @@ class GameViewModelTest {
 
     @Test fun setKeypadMarginWinsOverAutoAvoidAndPersistsPreference() = runTest {
         val vm = vm(); advanceUntilIdle()
-        // cell 1 = row 0, col 1 (LEFT band). Default preferred is BOTTOM, which does NOT hide it.
-        vm.select(1)
-        assertEquals(KeypadDock.BOTTOM, vm.ui.value.keypadDockNow, "pre-flick: BOTTOM doesn't hide a row-0 cell")
-        // Flick LEFT — LEFT *would* hide col-1, but an explicit flick wins: it lands LEFT anyway.
+        // cell 37 = row 4, col 1 — inside LEFT's footprint. Default preferred is BOTTOM, which does NOT hide it.
+        vm.select(37)
+        assertEquals(KeypadDock.BOTTOM, vm.ui.value.keypadDockNow, "pre-flick: BOTTOM doesn't hide a row-4 cell")
+        // Flick LEFT — LEFT *would* hide row-4/col-1, but an explicit flick wins: it lands LEFT anyway.
         vm.setKeypadMargin(KeypadDock.LEFT)
         assertEquals(KeypadDock.LEFT, vm.ui.value.keypadDockNow, "flick wins: lands where flicked even over the cell")
         assertEquals("LEFT", vm.ui.value.settings.keypadMargin, "flick updates the persisted preference (stored as String)")
@@ -604,9 +692,9 @@ class GameViewModelTest {
 
     @Test fun selectRecomputesRenderedMarginViaAutoAvoid() = runTest {
         val vm = vm(); advanceUntilIdle()
-        // preferred defaults BOTTOM: a bottom-band cell hops the rendered margin to TOP...
-        vm.select(63)
-        assertEquals(KeypadDock.TOP, vm.ui.value.keypadDockNow, "row-7 selection hops rendered to TOP")
+        // preferred defaults BOTTOM: a cell under the bottom dock hops the rendered margin to TOP...
+        vm.select(67)
+        assertEquals(KeypadDock.TOP, vm.ui.value.keypadDockNow, "row-7 col-4 selection hops rendered to TOP")
         // ...and a cell BOTTOM doesn't cover returns rendered to the preferred BOTTOM.
         vm.select(9)
         assertEquals(KeypadDock.BOTTOM, vm.ui.value.keypadDockNow, "row-1 selection returns rendered to preferred BOTTOM")
@@ -615,7 +703,7 @@ class GameViewModelTest {
     @Test fun renderedMarginReturnsToPreferredAfterAutoHop() = runTest {
         val vm = vm(); advanceUntilIdle()
         vm.setKeypadMargin(KeypadDock.LEFT)              // prefer LEFT
-        vm.select(1)                                     // col-1 under LEFT -> hop RIGHT
+        vm.select(37)                                    // row-4 col-1 under LEFT -> hop RIGHT
         assertEquals(KeypadDock.RIGHT, vm.ui.value.keypadDockNow)
         vm.select(40)                                    // center cell -> back to preferred LEFT
         assertEquals(KeypadDock.LEFT, vm.ui.value.keypadDockNow)
