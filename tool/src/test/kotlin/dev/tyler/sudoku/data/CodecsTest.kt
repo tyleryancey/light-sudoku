@@ -35,7 +35,7 @@ class CodecsTest {
         // user to all-off defaults, so nothing else in the suite would notice.
         val v13 = """{"__v":2,"rowcol":true,"box":true,"same":false,"conflicts":true,""" +
             """"checkOnEntry":true,"autoStart":true,"timer":true,"sound":false,""" +
-            """"plain":true,"keypadMargin":"TOP"}"""
+            """"plain":false,"keypadMargin":"TOP"}"""
         val decoded = Codecs.decodeSettings(v13)
 
         assertEquals(
@@ -51,6 +51,31 @@ class CodecsTest {
             assertTrue(!reencoded.contains("\"$retired\""), "retired key $retired is not re-emitted")
         }
         assertEquals(decoded, Codecs.decodeSettings(reencoded), "survivors round-trip after the shrink")
+    }
+
+    @Test fun settingsFromPlainModeBlobKeepsTheBareGrid() {
+        // Plain mode masked peer tint, identical-number tint and check dots regardless of the
+        // individual flags, so a blob with plain:true describes someone looking at a bare grid.
+        // Dropping the setting must not hand them the opposite of what they had.
+        val plainOn = """{"__v":2,"rowcol":true,"box":true,"same":true,"conflicts":true,""" +
+            """"checkOnEntry":true,"autoStart":false,"timer":true,"sound":true,""" +
+            """"plain":true,"keypadMargin":"RIGHT"}"""
+        val decoded = Codecs.decodeSettings(plainOn)
+
+        assertEquals(
+            Settings(rowcol = false, same = false, checkOnEntry = false, timer = true,
+                sound = true, keypadMargin = "RIGHT"),
+            decoded,
+            "flags plain used to mask are cleared; unrelated settings are untouched",
+        )
+
+        // Self-retiring: the migrated value re-encodes without `plain`, so decoding it again is a
+        // no-op and the toggles work normally from then on.
+        val reencoded = Codecs.encodeSettings(decoded.copy(rowcol = true))
+        assertTrue(
+            Codecs.decodeSettings(reencoded).rowcol,
+            "after the one-shot migration, turning highlighting back on sticks",
+        )
     }
 
     @Test fun progressRoundTrip() {

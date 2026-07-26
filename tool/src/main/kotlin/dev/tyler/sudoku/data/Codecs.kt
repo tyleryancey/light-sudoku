@@ -34,6 +34,19 @@ internal data class SettingsDto(
 )
 
 /**
+ * Read-only view of the one retired key that still has to influence decoding.
+ *
+ * Plain mode was a master override: while it was on, the board drew no peer tint, no
+ * identical-number tint and no check dots, whatever the individual flags said. Dropping the
+ * setting without looking at it would hand those users the opposite of what they had — a grid
+ * that suddenly lights up — so [Codecs.decodeSettings] reads `plain` from the stored blob one
+ * last time and clears the flags it used to mask. Kept out of [SettingsDto] deliberately: this
+ * is decode-only, and re-emitting the key would resurrect a setting that no longer exists.
+ */
+@Serializable
+private data class RetiredSettingsDto(val plain: Boolean = false)
+
+/**
  * Per-puzzle progress; field names v/c/l/a/t/s/r carry over from the prototype.
  * ca/cr are the auto-candidate diff layers (added/removed bits over the live auto set);
  * they default to empty so progress saved before this feature still decodes.
@@ -65,11 +78,19 @@ object Codecs {
     )
 
     fun decodeSettings(raw: String?): Settings {
-        val dto = raw?.let { runCatching { json.decodeFromString<SettingsDto>(it) }.getOrNull() }
+        if (raw == null) return Settings()
+        val dto = runCatching { json.decodeFromString<SettingsDto>(raw) }.getOrNull()
             ?: return Settings()
         if (dto.v != 2) return Settings()
+        // One-shot plain-mode migration: a blob still carrying plain=true describes a player who
+        // was seeing a bare grid, so honour what was on screen rather than what the masked flags
+        // said. Self-retiring — the first settings write re-encodes without `plain`, after which
+        // this is a no-op and the toggles behave normally again.
+        val wasPlain = runCatching { json.decodeFromString<RetiredSettingsDto>(raw) }.getOrNull()?.plain == true
         return Settings(
-            rowcol = dto.rowcol, same = dto.same, checkOnEntry = dto.checkOnEntry,
+            rowcol = dto.rowcol && !wasPlain,
+            same = dto.same && !wasPlain,
+            checkOnEntry = dto.checkOnEntry && !wasPlain,
             timer = dto.timer, sound = dto.sound, keypadMargin = dto.keypadMargin,
         )
     }
