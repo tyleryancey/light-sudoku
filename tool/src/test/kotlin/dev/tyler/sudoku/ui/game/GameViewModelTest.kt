@@ -135,11 +135,14 @@ class GameViewModelTest {
         for (retired in listOf("box", "conflicts", "autoStart", "plain")) {
             assertFalse(stored.contains("\"$retired\""), "$retired purged from storage on first load")
         }
-        // Survivors kept; the flags plain used to mask cleared; no second load needed.
+        // Surviving flags keep their stored values — the retired keys, plain included, get no say.
         val settings = vm.ui.value.settings
         assertTrue(settings.timer && settings.sound)
         assertEquals("RIGHT", settings.keypadMargin)
-        assertFalse(settings.rowcol || settings.same || settings.checkOnEntry, "bare grid preserved")
+        assertTrue(
+            settings.rowcol && settings.same && settings.checkOnEntry,
+            "surviving flags decode at face value, as if the retired settings had never existed",
+        )
         assertEquals(stored, Codecs.encodeSettings(settings), "storage matches the live settings")
     }
 

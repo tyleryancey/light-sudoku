@@ -103,9 +103,9 @@ class GameViewModel(
         val rawSettings = store.get(StoreKeys.SETTINGS)
         val settings = Codecs.decodeSettings(rawSettings)
         // Retire the dropped keys from storage on first load, so an upgraded install ends up in the
-        // state it would have been in had box/conflicts/autoStart/plain never existed — no lingering
-        // values, and the plain-mode migration in decodeSettings applies exactly once instead of on
-        // every decode until some unrelated settings write happens to purge it.
+        // state it would have been in had box/conflicts/autoStart/plain never existed: the surviving
+        // flags keep their values, and the retired ones leave no residue rather than sitting in the
+        // blob until some unrelated settings write happens to rewrite it.
         //
         // Comparing against the re-encoded form rather than scanning for known key names keeps this
         // correct for any future shrink, and also normalizes stale-__v and corrupt blobs, both of

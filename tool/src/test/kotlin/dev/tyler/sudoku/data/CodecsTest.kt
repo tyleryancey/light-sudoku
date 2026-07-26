@@ -53,28 +53,28 @@ class CodecsTest {
         assertEquals(decoded, Codecs.decodeSettings(reencoded), "survivors round-trip after the shrink")
     }
 
-    @Test fun settingsFromPlainModeBlobKeepsTheBareGrid() {
-        // Plain mode masked peer tint, identical-number tint and check dots regardless of the
-        // individual flags, so a blob with plain:true describes someone looking at a bare grid.
-        // Dropping the setting must not hand them the opposite of what they had.
-        val plainOn = """{"__v":2,"rowcol":true,"box":true,"same":true,"conflicts":true,""" +
-            """"checkOnEntry":true,"autoStart":false,"timer":true,"sound":true,""" +
-            """"plain":true,"keypadMargin":"RIGHT"}"""
-        val decoded = Codecs.decodeSettings(plainOn)
+    @Test fun retiredPlainKeyHasNoInfluenceOnDecoding() {
+        // The retired settings are treated as if they had never shipped, so `plain` gets no vote:
+        // the surviving flags decode at face value whether it was on or off. Two blobs differing
+        // ONLY in `plain` must therefore decode identically.
+        fun blob(plain: Boolean) =
+            """{"__v":2,"rowcol":true,"box":true,"same":true,"conflicts":true,""" +
+                """"checkOnEntry":true,"autoStart":true,"timer":true,"sound":true,""" +
+                """"plain":$plain,"keypadMargin":"RIGHT"}"""
 
-        assertEquals(
-            Settings(rowcol = false, same = false, checkOnEntry = false, timer = true,
-                sound = true, keypadMargin = "RIGHT"),
-            decoded,
-            "flags plain used to mask are cleared; unrelated settings are untouched",
+        val expected = Settings(
+            rowcol = true, same = true, checkOnEntry = true,
+            timer = true, sound = true, keypadMargin = "RIGHT",
         )
-
-        // Self-retiring: the migrated value re-encodes without `plain`, so decoding it again is a
-        // no-op and the toggles work normally from then on.
-        val reencoded = Codecs.encodeSettings(decoded.copy(rowcol = true))
-        assertTrue(
-            Codecs.decodeSettings(reencoded).rowcol,
-            "after the one-shot migration, turning highlighting back on sticks",
+        assertEquals(expected, Codecs.decodeSettings(blob(plain = false)))
+        assertEquals(
+            expected, Codecs.decodeSettings(blob(plain = true)),
+            "plain no longer masks anything — the flags it used to hide decode at face value",
+        )
+        assertEquals(
+            Codecs.decodeSettings(blob(plain = true)),
+            Codecs.decodeSettings(blob(plain = false)),
+            "the retired key cannot change the outcome",
         )
     }
 
