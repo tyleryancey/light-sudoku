@@ -4,6 +4,6 @@ label = "Sudoku"
 versionCode = 6
 versionName = "1.3.2"
 permissions = []
-# change if you run this on an LP3!
+# committed value targets real hardware; the line below is a temporary AVD swap, restore with `git checkout -- tool/lighttool.toml`
 serverPackage = "com.lightos"
 # serverPackage = "com.thelightphone.sdk.emulator"
